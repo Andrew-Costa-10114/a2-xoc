@@ -119,41 +119,99 @@ async def component_complete(
         component_input, context, "complete"
     )
     
-    # Build system prompt with Canvas-style instructions
-    system_prompt = """You are an intelligent AI assistant that helps users complete tasks.
+    # Build system prompt optimized for accuracy and all evaluation criteria
+    system_prompt = """You are a highly precise and accurate AI assistant. Your primary goal is to provide CORRECT, ACCURATE answers above all else.
 
-IMPORTANT: Respond in JSON format with two fields:
+CRITICAL QUALITY STANDARDS (in order of importance):
+
+1. ACCURACY (MOST IMPORTANT - 70% of evaluation):
+   - Verify all facts, calculations, and logic before responding
+   - For mathematical problems: Show step-by-step work, double-check calculations, verify the answer makes sense
+   - For factual questions: Ensure information is correct and up-to-date
+   - For code/logic problems: Test your reasoning and verify correctness
+   - If uncertain, clearly state limitations but still provide your best answer
+   - NEVER guess - use logical deduction and verification
+
+2. RELEVANCE (7.5% of evaluation):
+   - Directly address what is being asked
+   - Stay focused on the specific question or task
+   - Don't provide tangential information unless it's directly relevant
+
+3. COMPLETENESS (7.5% of evaluation):
+   - Answer ALL parts of the question
+   - Provide sufficient detail to fully address the request
+   - If multiple questions are asked, answer each one thoroughly
+
+4. CLARITY (5% of evaluation):
+   - Write in clear, understandable language
+   - Use proper grammar and sentence structure
+   - Organize your response logically
+   - Explain complex concepts in accessible terms
+
+5. FOLLOWING INSTRUCTIONS (5% of evaluation):
+   - Read the task description carefully
+   - Follow all specified format requirements
+   - Adhere to any constraints or guidelines provided
+   - Match the requested output style
+
+6. FORMAT/STRUCTURE (2.5% of evaluation):
+   - Structure your response well
+   - Use appropriate formatting (lists, paragraphs, headers as needed)
+   - Make the response easy to scan and understand
+
+7. SAFETY (2.5% of evaluation):
+   - Provide appropriate, ethical responses
+   - Avoid harmful, dangerous, or illegal content
+   - Be respectful and professional
+
+RESPONSE FORMAT REQUIREMENTS:
+
+You MUST respond in valid JSON format with exactly two fields:
 {
-  "immediate_response": "Your natural language explanation of what you did or your answer",
+  "immediate_response": "Your natural language explanation showing work, reasoning, and the final answer",
   "notebook": "Updated notebook content OR 'no update'"
 }
 
 Guidelines for notebook field:
-- If task is conversational only: Return "no update"
+- If task is conversational only (no code/document editing): Return "no update"
 - If there's ONE notebook and no changes needed: Return "no update"
 - If there's ONE notebook and changes needed: Return the updated version
 - If there are MULTIPLE notebooks: You MUST create new content (combine/choose/merge) - NEVER "no update"
 - If creating new notebook: Return the full content
-- Always provide valid JSON"""
+- Always provide valid, properly formatted JSON
+
+PROCESSING APPROACH:
+1. Read the task and input carefully
+2. Identify what is being asked (especially for math/logic problems)
+3. Show your reasoning process (especially for calculations)
+4. Verify your answer before responding
+5. Format as valid JSON
+
+Remember: ACCURACY IS PARAMOUNT. A correct, well-reasoned answer is far more valuable than a fast but incorrect one."""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences and context:\n{playbook_context}"
     
-    # Build task prompt
+    # Build task prompt with enhanced instructions
     task_prompt = f"""Task: {component_input.task}
 
 Input:
 {input_text}
 {previous_context}
 
-Complete this task and respond in JSON format."""
+Instructions:
+- Read the task and input carefully
+- Show your reasoning process, especially for mathematical or logical problems
+- Verify your answer before responding
+- Ensure your answer directly addresses what is being asked
+- Respond in valid JSON format with "immediate_response" and "notebook" fields"""
     
-    # Generate response with optional conversation history
+    # Generate response with optional conversation history (lower temperature for better accuracy)
     response = await generate_response(
         prompt=task_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.7
+        temperature=0.2  # Lower temperature for more deterministic, accurate answers
     )
     
     # Parse JSON response
@@ -249,40 +307,75 @@ async def component_refine(
         component_input, context, "refine"
     )
     
-    # Build system prompt with Canvas-style instructions
-    system_prompt = """You are an AI assistant that refines and improves outputs.
+    # Build system prompt optimized for accuracy and quality
+    system_prompt = """You are an AI assistant that refines and improves outputs with precision and accuracy.
 
-IMPORTANT: Respond in JSON format:
+CRITICAL QUALITY STANDARDS:
+
+1. ACCURACY (MOST IMPORTANT):
+   - Verify all improvements are correct
+   - Double-check any corrections to calculations, facts, or logic
+   - Ensure refined content is accurate and valid
+
+2. RELEVANCE:
+   - Focus improvements on what was actually requested
+   - Don't change aspects that are already correct unless asked
+
+3. COMPLETENESS:
+   - Address all aspects that need refinement
+   - Ensure the refined output is complete and thorough
+
+4. CLARITY:
+   - Improve clarity and readability
+   - Make explanations clearer and more understandable
+
+5. FOLLOWING INSTRUCTIONS:
+   - Follow the refinement task exactly
+   - Adhere to format requirements
+
+6. FORMAT:
+   - Maintain or improve structure and organization
+
+7. SAFETY:
+   - Ensure refined content is appropriate and ethical
+
+RESPONSE FORMAT REQUIREMENTS:
+
+You MUST respond in valid JSON format:
 {
-  "immediate_response": "Explanation of what you refined and why",
+  "immediate_response": "Clear explanation of what you refined, why, and how the improvements enhance accuracy and quality",
   "notebook": "The refined/improved content OR 'no update'"
 }
 
 Guidelines for notebook field:
 - If providing feedback only: Set notebook to "no update"
 - If there's ONE notebook and no improvements needed: Set to "no update"
-- If there's ONE notebook and improvements needed: Write the improved version
+- If there's ONE notebook and improvements needed: Write the improved, more accurate version
 - If there are MULTIPLE notebooks: You MUST create new content (refine one, combine, or merge) - NEVER "no update"
 - Always provide valid JSON"""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
     
-    # Build refine prompt
+    # Build refine prompt with enhanced instructions
     refine_prompt = f"""Task: {component_input.task}
 
 Original Input:
 {input_text}
 {previous_outputs_text}
 
-Refine and improve the outputs. Respond in JSON format."""
+Instructions:
+- Carefully analyze the outputs to identify areas for improvement
+- Focus especially on improving accuracy, correctness, and clarity
+- Verify that all improvements are correct
+- Respond in valid JSON format with "immediate_response" and "notebook" fields"""
     
-    # Generate response
+    # Generate response (lower temperature for more precise refinements)
     response = await generate_response(
         prompt=refine_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.7
+        temperature=0.3  # Lower temperature for more accurate refinements
     )
     
     # Parse JSON response
@@ -371,30 +464,63 @@ async def component_feedback(
         component_input, context, "feedback"
     )
     
-    # Build system prompt
-    system_prompt = "You are an AI assistant that provides constructive feedback."
-    if playbook_context:
-        system_prompt += f"\n{playbook_context}"
+    # Build system prompt optimized for quality feedback
+    system_prompt = """You are an AI assistant that provides accurate, constructive, and insightful feedback.
+
+CRITICAL QUALITY STANDARDS:
+
+1. ACCURACY (MOST IMPORTANT):
+   - Provide accurate, factual feedback
+   - Correctly identify strengths and weaknesses
+   - Base suggestions on accurate analysis
+
+2. RELEVANCE:
+   - Focus feedback on aspects that directly relate to the task
+   - Address the most important improvement areas
+
+3. COMPLETENESS:
+   - Cover all major aspects: strengths, weaknesses, and suggestions
+   - Provide comprehensive analysis
+
+4. CLARITY:
+   - Write clear, understandable feedback
+   - Structure feedback logically with clear sections
+   - Use specific examples where helpful
+
+5. FOLLOWING INSTRUCTIONS:
+   - Follow the feedback task requirements
+   - Address all requested aspects
+
+6. FORMAT:
+   - Organize feedback with clear sections
+   - Use appropriate formatting for readability
+
+7. SAFETY:
+   - Provide respectful, constructive feedback
+   - Maintain appropriate tone and content"""
     
-    # Build feedback prompt
+    if playbook_context:
+        system_prompt += f"\n\nUser preferences:\n{playbook_context}"
+    
+    # Build feedback prompt with enhanced instructions
     feedback_prompt = f"""Task: {component_input.task}
 {outputs_to_analyze}
 
-Analyze the outputs and provide structured feedback:
-
-For each output, identify:
-1. Strengths (what works well)
-2. Weaknesses (what could be improved)
-3. Specific suggestions for improvement
-
-Format your feedback clearly with sections."""
+Instructions:
+- Analyze the outputs accurately and provide structured feedback
+- For each output, identify:
+  1. Strengths (what works well and is correct)
+  2. Weaknesses (what could be improved, including accuracy issues)
+  3. Specific, actionable suggestions for improvement (focus on improving accuracy and quality)
+- Ensure your feedback is accurate, relevant, complete, and clearly formatted
+- Format your feedback with clear sections for easy reading"""
     
-    # Generate feedback
+    # Generate feedback (moderate temperature for balanced feedback)
     response = await generate_response(
         prompt=feedback_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.7
+        temperature=0.4  # Lower temperature for more accurate, focused feedback
     )
     
     # Store in conversation history
@@ -708,44 +834,79 @@ async def component_summary(
         component_input, context, "summary"
     )
     
-    # Build system prompt with Canvas-style instructions
-    system_prompt = """You are an AI assistant that creates concise, comprehensive summaries.
+    # Build system prompt optimized for accuracy and completeness
+    system_prompt = """You are an AI assistant that creates accurate, comprehensive summaries.
 
-IMPORTANT: Respond in JSON format with two fields:
+CRITICAL QUALITY STANDARDS:
+
+1. ACCURACY (MOST IMPORTANT):
+   - Ensure all facts, numbers, and key information in the summary are correct
+   - Preserve the meaning and intent of the original content accurately
+   - Don't introduce errors or misinterpretations
+
+2. RELEVANCE:
+   - Include only relevant and important information
+   - Focus on the main points and key insights
+
+3. COMPLETENESS:
+   - Capture all main points and key insights
+   - Don't omit critical information
+   - Ensure the summary is comprehensive yet concise
+
+4. CLARITY:
+   - Write clearly and understandably
+   - Organize information logically
+   - Use proper structure and formatting
+
+5. FOLLOWING INSTRUCTIONS:
+   - Follow the summary task requirements
+   - Adhere to format guidelines
+
+6. FORMAT:
+   - Structure the summary well
+   - Use appropriate organization
+
+7. SAFETY:
+   - Maintain appropriate content standards
+
+RESPONSE FORMAT REQUIREMENTS:
+
+You MUST respond in valid JSON format with two fields:
 {
-  "immediate_response": "Your summary explanation",
+  "immediate_response": "Your summary explanation that accurately captures key points",
   "notebook": "Summarized notebook content OR 'no update'"
 }
 
 Guidelines for notebook field:
 - If there's NO notebook content in inputs: Return "no update"
-- If there's ONE notebook to summarize: Return the summarized version
-- If there are MULTIPLE notebooks: Create a combined summary
+- If there's ONE notebook to summarize: Return the accurately summarized version
+- If there are MULTIPLE notebooks: Create a combined summary that accurately represents all content
 - Always provide valid JSON"""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
     
-    # Build summary prompt
+    # Build summary prompt with enhanced instructions
     summary_prompt = f"""Task: {component_input.task}
 
 Content to summarize:
 {combined_content}
 
-Create a comprehensive summary that:
-1. Captures the main points and key insights
-2. Maintains important details
-3. Removes redundancy
-4. Organizes information logically
-
-Respond in JSON format."""
+Instructions:
+- Create a comprehensive, accurate summary that:
+  1. Captures ALL main points and key insights correctly
+  2. Maintains accuracy of all facts and numbers
+  3. Removes redundancy while preserving important details
+  4. Organizes information logically and clearly
+- Verify that your summary accurately represents the source content
+- Respond in valid JSON format with "immediate_response" and "notebook" fields"""
     
-    # Generate summary
+    # Generate summary (moderate temperature for balanced summaries)
     response = await generate_response(
         prompt=summary_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.5
+        temperature=0.4  # Slightly lower for more accurate summaries
     )
     
     # Parse JSON response
@@ -852,45 +1013,80 @@ async def component_aggregate(
         component_input, context, "aggregate"
     )
     
-    # Build system prompt with Canvas-style instructions
-    system_prompt = """You are an AI assistant that aggregates multiple outputs using majority voting.
+    # Build system prompt optimized for accurate aggregation
+    system_prompt = """You are an AI assistant that aggregates multiple outputs using accurate majority voting and consensus analysis.
 
-IMPORTANT: Respond in JSON format with two fields:
+CRITICAL QUALITY STANDARDS:
+
+1. ACCURACY (MOST IMPORTANT):
+   - Verify which answer is most commonly correct across outputs
+   - Use logical analysis to determine the best consensus answer
+   - Prefer the most accurate answer, not just the most common one
+   - If one answer is clearly correct, choose it even if less common
+
+2. RELEVANCE:
+   - Focus on answers that directly address the question
+   - Filter out irrelevant or off-topic responses
+
+3. COMPLETENESS:
+   - Consider all aspects of the outputs
+   - Ensure the consensus answer is complete
+
+4. CLARITY:
+   - Clearly explain the consensus and voting logic
+   - Show which outputs agree and which differ
+
+5. FOLLOWING INSTRUCTIONS:
+   - Follow majority voting logic accurately
+   - Adhere to format requirements
+
+6. FORMAT:
+   - Structure the aggregation clearly
+   - Organize consensus explanation well
+
+7. SAFETY:
+   - Ensure aggregated content is appropriate
+
+RESPONSE FORMAT REQUIREMENTS:
+
+You MUST respond in valid JSON format with two fields:
 {
-  "immediate_response": "Your explanation of the consensus and voting results",
+  "immediate_response": "Clear explanation of the consensus, voting results, and how you determined the most accurate answer",
   "notebook": "The aggregated/consensus notebook content OR 'no update'"
 }
 
 Guidelines for notebook field:
 - If there's NO notebook content in inputs: Return "no update"
 - If there's ONE notebook: Return it as-is (or "no update" if no changes)
-- If there are MULTIPLE notebooks: Create aggregated version using majority voting
-- Use majority voting: Choose the most common content or merge agreements
+- If there are MULTIPLE notebooks: Create aggregated version using majority voting, choosing the most accurate consensus
+- Use majority voting: Choose the most common AND most accurate content, or merge agreements intelligently
 - Always provide valid JSON"""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
     
-    # Build aggregate prompt
+    # Build aggregate prompt with enhanced instructions
     aggregate_prompt = f"""Task: {component_input.task}
 
 Multiple outputs to aggregate:
 {combined_outputs}
 
-Analyze these outputs and determine the consensus answer by:
-1. Identifying common themes and agreements
-2. Noting where outputs differ
-3. Using majority voting logic to determine the most supported answer
-4. Highlighting any important minority opinions
-
-Respond in JSON format."""
+Instructions:
+- Carefully analyze these outputs and determine the consensus answer by:
+  1. Identifying common themes and agreements (especially correct answers)
+  2. Noting where outputs differ and why
+  3. Using majority voting logic: Choose the most commonly correct answer
+  4. Prioritizing accuracy: If one answer is clearly more accurate, prefer it
+  5. Highlighting any important minority opinions that might be valid
+- Verify the consensus answer is correct and well-reasoned
+- Respond in valid JSON format with "immediate_response" and "notebook" fields"""
     
-    # Generate aggregate result
+    # Generate aggregate result (low temperature for deterministic consensus)
     response = await generate_response(
         prompt=aggregate_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.3
+        temperature=0.2  # Very low temperature for accurate, deterministic consensus
     )
     
     # Parse JSON response

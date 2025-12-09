@@ -1,0 +1,29 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Python files should use LF line endings
+*.py text eol=lf
+*.pyw text eol=lf
+
+# Shell scripts should use LF line endings
+*.sh text eol=lf
+
+# Windows batch files should use CRLF line endings
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Configuration files
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Git files
+*.gitignore text eol=lf
+*.gitattributes text eol=lf
