@@ -20,7 +20,7 @@ SUPPORTED COMPONENTS:
 2. refine: Improve outputs based on previous component results
 3. feedback: Analyze outputs and provide structured feedback
 4. human_feedback: Acknowledge and store user feedback in conversation history
-5. internet_search: Search internet (template - miners implement actual search)
+5. internet_search: Search internet using DuckDuckGo (free, no API key required)
 6. summary: Use LLM to summarize previous outputs
 7. aggregate: Majority voting on multiple outputs
 
@@ -169,7 +169,7 @@ async def root():
             "refine": "/refine - Refine outputs based on previous results",
             "feedback": "/feedback - Analyze outputs and provide feedback",
             "human_feedback": "/human_feedback - Acknowledge user feedback",
-            "internet_search": "/internet_search - Search internet (template)",
+            "internet_search": "/internet_search - Search internet using DuckDuckGo",
             "summary": "/summary - Summarize previous outputs",
             "aggregate": "/aggregate - Majority voting on outputs"
         },
@@ -235,7 +235,7 @@ async def get_capabilities():
             "unified_component_interface": True,
             "conversation_history": True,
             "auto_message_cleanup": True,
-            "internet_search_template": True,
+            "internet_search": True,
             "llm_summary": True,
             "majority_voting": True,
             "privacy_friendly": True,
@@ -333,16 +333,14 @@ async def human_feedback_component(request: Request, component_input: ComponentI
 @limiter.limit("10/minute")
 async def internet_search_component(request: Request, component_input: ComponentInput):
     """
-    Search the internet for information.
+    Search the internet for information using DuckDuckGo.
     
-    NOTE: This is a template implementation that returns "unavailable service".
-    Miners should implement actual internet search functionality using services like:
-    - Google Custom Search API
-    - Bing Search API
-    - DuckDuckGo API
-    - SerpAPI
+    This endpoint performs real internet searches using the DuckDuckGo search API
+    (free, no API key required). It returns up to 10 results per query with titles,
+    URLs, and descriptions formatted as structured text.
     
-    See the implementation in src/services/components.py for detailed notes.
+    The implementation uses the duckduckgo-search library. If the library is not
+    installed, the endpoint will return an error message with installation instructions.
     """
     try:
         context = conversation_manager.get_or_create(component_input.cid)
