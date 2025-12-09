@@ -40,6 +40,11 @@ aiohttp>=3.9.1            # Alternative async HTTP client
 requests>=2.31.0          # Traditional HTTP client for synchronous operations
 
 # ============================================================================
+# Internet Search
+# ============================================================================
+duckduckgo-search>=6.0.0  # Free internet search (no API key required)
+
+# ============================================================================
 # User Interface
 # ============================================================================
 gradio>=4.7.1             # Web UI for testing API endpoints (optional)

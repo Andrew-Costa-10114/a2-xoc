@@ -9,6 +9,11 @@ import json
 import logging
 from typing import List
 
+try:
+    from duckduckgo_search import DDGS
+except ImportError:
+    DDGS = None
+
 from src.models.models import (
     ComponentInput, 
     ComponentOutput, 
@@ -703,75 +708,145 @@ async def component_internet_search(
     context: ConversationContext
 ) -> ComponentOutput:
     """
-    Internet search component: Search the internet for information.
+    Internet search component: Search the internet for information using DuckDuckGo.
     
-    NOTE: This is a template implementation. Miners should implement actual
-    internet search functionality using services like:
-    - Google Custom Search API
-    - Bing Search API
-    - DuckDuckGo API
-    - SerpAPI
-    - Or any other search service
+    Uses DuckDuckGo search API (free, no API key required) to search the internet
+    for information based on user queries.
     
     Args:
         component_input: Unified component input with search queries
         context: Conversation context
         
     Returns:
-        ComponentOutput with search results (currently returns "unavailable service")
+        ComponentOutput with search results formatted as structured text
     """
     logger.info(f"[internet_search] Processing task: {component_input.task}")
+    
+    # Check if duckduckgo-search is available
+    if DDGS is None:
+        error_msg = "Internet Search Service: UNAVAILABLE\n\nDuckDuckGo search library not installed. Please install it with: pip install duckduckgo-search"
+        logger.error("[internet_search] DuckDuckGo library not available")
+        context.add_user_message(f"Search: {', '.join(item.user_query for item in component_input.input)}")
+        context.add_assistant_message(error_msg)
+        return ComponentOutput(
+            cid=component_input.cid,
+            task=component_input.task,
+            input=component_input.input,
+            output=ComponentOutputData(
+                immediate_response=error_msg,
+                notebook="no update"
+            ),
+            component="internet_search"
+        )
     
     # Extract search queries
     search_queries = []
     for item in component_input.input:
         search_queries.append(item.user_query)
     
-    # Template response - miners should replace this with actual implementation
-    response = f"""Internet Search Service: UNAVAILABLE (Template)
+    logger.info(f"[internet_search] Executing {len(search_queries)} search query/queries")
+    
+    # Perform searches and collect results
+    all_results = []
+    
+    try:
+        with DDGS() as ddgs:
+            for query in search_queries:
+                try:
+                    logger.info(f"[internet_search] Searching for: {query}")
+                    # Search with DuckDuckGo (max_results=10 per query)
+                    results = list(ddgs.text(query, max_results=10))
+                    
+                    if results:
+                        query_results = {
+                            "query": query,
+                            "results": results
+                        }
+                        all_results.append(query_results)
+                        logger.info(f"[internet_search] Found {len(results)} results for: {query}")
+                    else:
+                        logger.warning(f"[internet_search] No results found for: {query}")
+                        all_results.append({
+                            "query": query,
+                            "results": []
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"[internet_search] Error searching for '{query}': {str(e)}")
+                    all_results.append({
+                        "query": query,
+                        "error": f"Search failed: {str(e)}",
+                        "results": []
+                    })
+    
+    except Exception as e:
+        logger.error(f"[internet_search] Critical error during search: {str(e)}")
+        error_response = f"""Internet Search Service: ERROR
 
-This is a template implementation. Miners should implement actual internet search.
+An error occurred while performing the search:
 
-Queries received:
+Error: {str(e)}
+
+Queries attempted:
 {chr(10).join(f"- {q}" for q in search_queries)}
 
-IMPLEMENTATION NOTES FOR MINERS:
-==================================
-To implement internet search, you can use:
-
-1. Google Custom Search API:
-   - Create API key at: https://console.cloud.google.com/
-   - Use googleapis Python library
-   - Example: google.search(query, num_results=10)
-
-2. Bing Search API:
-   - Get API key from Azure Cognitive Services
-   - Use requests library to call Bing API
-
-3. DuckDuckGo API:
-   - Free and no API key required
-   - Use duckduckgo-search Python library
-   - Example: from duckduckgo_search import DDGS
-
-4. SerpAPI:
-   - Multi-engine search API
-   - Supports Google, Bing, Yahoo, etc.
-   - Example: serpapi.search(query)
-
-Implementation should:
-- Parse search queries from component_input.input
-- Execute searches using your chosen service
-- Format results as structured text
-- Return ComponentOutput with results
-- Handle rate limiting and errors gracefully
-
-Replace this function body with your actual search implementation."""
+Please try again later or check your internet connection."""
+        
+        context.add_user_message(f"Search: {', '.join(search_queries)}")
+        context.add_assistant_message(error_response)
+        
+        return ComponentOutput(
+            cid=component_input.cid,
+            task=component_input.task,
+            input=component_input.input,
+            output=ComponentOutputData(
+                immediate_response=error_response,
+                notebook="no update"
+            ),
+            component="internet_search"
+        )
+    
+    # Format results as structured text
+    response_parts = []
+    response_parts.append("Internet Search Results")
+    response_parts.append("=" * 50)
+    response_parts.append("")
+    
+    for query_data in all_results:
+        query = query_data["query"]
+        results = query_data.get("results", [])
+        error = query_data.get("error")
+        
+        response_parts.append(f"Query: {query}")
+        response_parts.append("-" * 50)
+        
+        if error:
+            response_parts.append(f"Error: {error}")
+            response_parts.append("")
+            continue
+        
+        if not results:
+            response_parts.append("No results found.")
+            response_parts.append("")
+            continue
+        
+        for idx, result in enumerate(results, 1):
+            title = result.get("title", "No title")
+            body = result.get("body", "No description")
+            href = result.get("href", "No URL")
+            
+            response_parts.append(f"{idx}. {title}")
+            response_parts.append(f"   URL: {href}")
+            response_parts.append(f"   Description: {body}")
+            response_parts.append("")
+        
+        response_parts.append("")
+    
+    response = "\n".join(response_parts)
     
     # Store in conversation history
     context.add_user_message(f"Search: {', '.join(search_queries)}")
     context.add_assistant_message(response)
-    
-
     
     # Internet search is conversational - no notebook editing
     return ComponentOutput(
