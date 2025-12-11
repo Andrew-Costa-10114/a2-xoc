@@ -8,7 +8,7 @@ All components follow the same pattern:
 import json
 import logging
 import re
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 try:
     from duckduckgo_search import DDGS
@@ -220,6 +220,148 @@ def get_playbook_service() -> PlaybookService:
     return _playbook_service
 
 
+def _get_relevant_messages(
+    all_messages: List[Dict],
+    current_task: str,
+    current_input: str,
+    max_messages: int = 5
+) -> List[Dict]:
+    """
+    Smart conversation history selection optimized for accuracy.
+    
+    Prioritizes messages that are:
+    1. Directly relevant to the current task/input (keyword matching)
+    2. Part of conversation pairs (user-assistant pairs maintained)
+    3. Most recent (within relevance window)
+    4. Related to similar topics or concepts
+    5. Mathematical/logical context (for problem-solving accuracy)
+    
+    Args:
+        all_messages: All available messages from conversation (already in chronological order)
+        current_task: Current task description
+        current_input: Current input text
+        max_messages: Maximum messages to return (default 5 for good context)
+        
+    Returns:
+        List of relevant messages ordered by relevance and recency, maintaining chronological flow
+    """
+    if not all_messages:
+        return []
+    
+    if len(all_messages) <= max_messages:
+        # If we have fewer messages than max, return all
+        return all_messages
+    
+    # Extract keywords and important terms from current task and input
+    task_text = (current_task + " " + current_input).lower()
+    
+    # Common stop words to filter out
+    common_words = {
+        'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her', 'was', 
+        'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 
+        'new', 'now', 'old', 'see', 'two', 'who', 'way', 'use', 'your', 'what', 'this', 
+        'that', 'with', 'from', 'have', 'had', 'will', 'would', 'should', 'could',
+        'task', 'please', 'help', 'need', 'want', 'like', 'make', 'give', 'tell'
+    }
+    
+    # Extract meaningful keywords (length > 3, not stop words)
+    words = task_text.split()
+    relevant_keywords = {
+        w.strip('.,!?;:()[]{}"\'') 
+        for w in words 
+        if len(w.strip('.,!?;:()[]{}"\'')) > 3 
+        and w.strip('.,!?;:()[]{}"\'') not in common_words
+    }
+    
+    # Also extract short important words that might be key (numbers, short technical terms)
+    important_short_words = {
+        w.strip('.,!?;:()[]{}"\'') 
+        for w in words 
+        if w.strip('.,!?;:()[]{}"\'') in ['math', 'calc', 'code', 'api', 'url', 'id', 'key', 'val']
+        or w.strip('.,!?;:()[]{}"\'').isdigit()
+    }
+    relevant_keywords.update(important_short_words)
+    
+    # Score messages by relevance and importance
+    scored_messages = []
+    for idx, msg in enumerate(all_messages):
+        content = msg.get('content', '').lower()
+        role = msg.get('role', '')
+        
+        score = 0.0
+        
+        # 1. RECENCY SCORE (30% weight) - more recent messages are more relevant
+        recency_score = ((len(all_messages) - idx) / len(all_messages)) * 0.3
+        
+        # 2. KEYWORD RELEVANCE SCORE (40% weight) - matches in message content
+        keyword_matches = sum(1 for keyword in relevant_keywords if keyword in content)
+        keyword_score = (keyword_matches / max(len(relevant_keywords), 1)) * 0.4
+        
+        # 3. TASK TERM RELEVANCE (20% weight) - direct task-related terms
+        task_terms = [t.strip('.,!?;:()[]{}"\'') for t in current_task.lower().split() if len(t.strip('.,!?;:()[]{}"\'')) > 3]
+        task_matches = sum(1 for term in task_terms if term in content)
+        task_score = (task_matches / max(len(task_terms), 1)) * 0.2 if task_terms else 0
+        
+        # 4. CONVERSATION PAIR BONUS (10% weight) - prefer maintaining user-assistant pairs
+        pair_bonus = 0.1 if role in ['user', 'assistant'] else 0
+        
+        # 5. MATHEMATICAL/LOGICAL CONTEXT BONUS - for problem-solving accuracy
+        math_indicators = ['calculate', 'solve', 'problem', 'equation', 'formula', 'answer', 'result', 'step', 'verify', 'check', 'math', 'number', 'value', 'compute']
+        logic_indicators = ['reason', 'logic', 'deduce', 'conclude', 'therefore', 'because', 'if', 'then']
+        
+        # Check if message contains mathematical or logical content
+        has_math = any(indicator in content for indicator in math_indicators)
+        has_logic = any(indicator in content for indicator in logic_indicators)
+        has_numbers = any(char.isdigit() for char in content)  # Contains numbers
+        
+        # Bonus for mathematical/logical context (critical for accuracy in problem-solving)
+        if has_math or has_logic or has_numbers:
+            pair_bonus += 0.08  # Higher bonus for mathematical/logical context
+        
+        # Calculate total score
+        total_score = recency_score + keyword_score + task_score + pair_bonus
+        scored_messages.append((total_score, idx, msg))
+    
+    # Sort by score (highest first)
+    scored_messages.sort(key=lambda x: x[0], reverse=True)
+    
+    # Smart selection: maintain conversation flow and relevance
+    selected_indices = set()
+    selected_messages = []
+    
+    # Always include the most recent message for continuity (critical for accuracy)
+    if all_messages:
+        most_recent_idx = len(all_messages) - 1
+        selected_messages.append(all_messages[most_recent_idx])
+        selected_indices.add(most_recent_idx)
+    
+    # Add top-scoring relevant messages
+    for score, idx, msg in scored_messages:
+        if len(selected_messages) >= max_messages:
+            break
+        if idx not in selected_indices:
+            selected_messages.append(msg)
+            selected_indices.add(idx)
+    
+    # If we have a user message, try to include its assistant response (maintain pairs)
+    for msg in selected_messages[:]:
+        if msg.get('role') == 'user':
+            msg_idx = all_messages.index(msg)
+            if msg_idx + 1 < len(all_messages):
+                next_msg = all_messages[msg_idx + 1]
+                if (next_msg.get('role') == 'assistant' and 
+                    next_msg not in selected_messages and 
+                    len(selected_messages) < max_messages):
+                    selected_messages.append(next_msg)
+                    selected_indices.add(msg_idx + 1)
+    
+    # Sort by original chronological order (maintain conversation flow)
+    selected_messages.sort(key=lambda m: all_messages.index(m))
+    
+    # Ensure we don't exceed max_messages
+    return selected_messages[:max_messages]
+
+
 async def get_context_additions(
     component_input: ComponentInput,
     context: ConversationContext,
@@ -227,6 +369,7 @@ async def get_context_additions(
 ) -> tuple[list, str]:
     """
     Get conversation history and playbook context based on component input settings.
+    Uses smart message selection optimized for accuracy and relevance.
     
     Args:
         component_input: Component input with settings
@@ -236,12 +379,28 @@ async def get_context_additions(
     Returns:
         Tuple of (conversation_history, playbook_context_string)
     """
-    # Get conversation history if enabled (optimized: limit to 3 most recent for speed)
+    # Get conversation history if enabled (optimized: smart selection for accuracy)
     conversation_history = []
     if component_input.use_conversation_history:
-        # Limit to 3 most recent messages for faster processing while maintaining context
-        conversation_history = context.get_recent_messages(count=3)
-        logger.info(f"[{component_name}] Using conversation history: {len(conversation_history)} messages")
+        # Get all available messages (up to 10)
+        all_messages = context.get_recent_messages(count=10)
+        
+        if all_messages:
+            # Build current input text for relevance matching
+            current_input_text = " ".join([item.user_query for item in component_input.input])
+            current_task = component_input.task
+            
+            # Use smart selection to get most relevant messages (up to 5 for better context)
+            conversation_history = _get_relevant_messages(
+                all_messages=all_messages,
+                current_task=current_task,
+                current_input=current_input_text,
+                max_messages=5  # Increased from 3 to 5 for better context, but selected intelligently
+            )
+            
+            logger.info(f"[{component_name}] Using smart conversation history: {len(conversation_history)} relevant messages selected from {len(all_messages)} available")
+        else:
+            logger.info(f"[{component_name}] No conversation history available")
     else:
         logger.info(f"[{component_name}] Conversation history disabled")
     
