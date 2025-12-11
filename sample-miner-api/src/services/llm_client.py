@@ -9,9 +9,10 @@ The client automatically detects the provider from settings and provides
 an OpenAI-compatible interface for both.
 """
 
+import asyncio
 import logging
 from typing import Optional, List, Dict, Any
-from openai import AsyncOpenAI, OpenAIError
+from openai import AsyncOpenAI, OpenAIError, RateLimitError, APIError, APIConnectionError, APITimeoutError
 import httpx
 from src.core.config import settings
 
@@ -61,6 +62,60 @@ class LLMClient:
         
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}. Use 'openai' or 'vllm'.")
+    
+    async def _call_with_retry(self, api_call, operation_name: str = "api_call", max_retries: Optional[int] = None):
+        """
+        Execute API call with exponential backoff retry logic for transient errors.
+        
+        Args:
+            api_call: Async callable that performs the API operation
+            operation_name: Name of operation for logging
+            max_retries: Maximum retry attempts (defaults to MAX_RETRIES)
+            
+        Returns:
+            API response
+            
+        Raises:
+            Original exception if all retries fail or error is not retryable
+        """
+        max_retries = max_retries or self.MAX_RETRIES
+        retry_delay = self.INITIAL_RETRY_DELAY
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):
+            try:
+                return await api_call()
+            except self.RETRYABLE_ERRORS as e:
+                last_exception = e
+                
+                if attempt < max_retries:
+                    # Calculate exponential backoff with jitter
+                    delay = min(retry_delay * (2 ** attempt), self.MAX_RETRY_DELAY)
+                    # Add small random jitter to avoid thundering herd
+                    import random
+                    jitter = random.uniform(0, 0.1 * delay)
+                    total_delay = delay + jitter
+                    
+                    error_type = type(e).__name__
+                    logger.warning(
+                        f"{operation_name} failed with {error_type} (attempt {attempt + 1}/{max_retries + 1}): {str(e)}. "
+                        f"Retrying in {total_delay:.2f}s..."
+                    )
+                    
+                    await asyncio.sleep(total_delay)
+                else:
+                    logger.error(
+                        f"{operation_name} failed after {max_retries + 1} attempts. "
+                        f"Last error: {type(e).__name__}: {str(e)}"
+                    )
+            except (OpenAIError, Exception) as e:
+                # Non-retryable errors - fail immediately
+                logger.error(f"{operation_name} failed with non-retryable error: {type(e).__name__}: {str(e)}")
+                raise
+        
+        # If we exhausted retries, raise the last exception
+        if last_exception:
+            raise last_exception
     
     async def generate_response(
         self,
@@ -135,9 +190,19 @@ class LLMClient:
             if response_format:
                 params["response_format"] = response_format
             
-            # Make API call
+            # Make API call with retry logic for transient errors
             logger.info(f"Calling OpenAI API with model: {self.model}")
-            response = await self.client.chat.completions.create(**params)
+            response = await self._call_with_retry(
+                lambda: self.client.chat.completions.create(**params),
+                operation_name="generate_response"
+            )
+            
+            # Validate response structure
+            if not response or not response.choices:
+                raise APIError("Invalid response structure: missing choices")
+            
+            if not response.choices[0] or not response.choices[0].message:
+                raise APIError("Invalid response structure: missing message")
             
             # Extract response data
             message = response.choices[0].message
@@ -145,18 +210,25 @@ class LLMClient:
             result = {
                 "response": message.content or "",
                 "model": response.model,
-                "tokens_used": response.usage.total_tokens,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
                 "finish_reason": response.choices[0].finish_reason
             }
+            
+            # Validate response content
+            if not result["response"] and result["finish_reason"] != "stop":
+                logger.warning(f"Empty response with finish_reason: {result['finish_reason']}")
             
             logger.info(f"Successfully generated response. Tokens used: {result['tokens_used']}")
             return result
             
+        except (RateLimitError, APIConnectionError, APITimeoutError) as e:
+            logger.error(f"Transient API error in generate_response: {str(e)}")
+            raise
         except OpenAIError as e:
-            logger.error(f"OpenAI API error: {str(e)}")
+            logger.error(f"OpenAI API error in generate_response: {str(e)}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error in generate_response: {str(e)}")
+            logger.error(f"Unexpected error in generate_response: {str(e)}", exc_info=True)
             raise
     
     async def complete_text(

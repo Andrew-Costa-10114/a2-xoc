@@ -438,25 +438,29 @@ async def component_complete(
         
     Returns:
         ComponentOutput with the completed task
+        
+    Raises:
+        Exception: If critical errors occur (wrapped with context)
     """
     logger.info(f"[complete] Processing task: {component_input.task}")
     
-    # Build input text from all input items (optimized: truncate if too long)
-    input_text_parts = []
-    for idx, item in enumerate(component_input.input, 1):
-        # Truncate individual queries if excessively long (keep first 2000 chars for speed)
-        query_text = item.user_query[:2000] if len(item.user_query) > 2000 else item.user_query
-        input_text_parts.append(f"Query {idx}: {query_text}")
-    
-    input_text = "\n\n".join(input_text_parts)
-    # Truncate total input if too long (max 5000 chars for faster processing)
-    if len(input_text) > 5000:
-        input_text = input_text[:5000] + "\n[... input truncated for performance ...]"
-    
-    # Build previous outputs context (optimized: truncate long outputs for speed)
-    previous_context = ""
-    if component_input.previous_outputs:
-        previous_context = "\n\nPrevious component outputs:\n"
+    try:
+        # Build input text from all input items (optimized: truncate if too long)
+        input_text_parts = []
+        for idx, item in enumerate(component_input.input, 1):
+            # Truncate individual queries if excessively long (keep first 2000 chars for speed)
+            query_text = item.user_query[:2000] if len(item.user_query) > 2000 else item.user_query
+            input_text_parts.append(f"Query {idx}: {query_text}")
+        
+        input_text = "\n\n".join(input_text_parts)
+        # Truncate total input if too long (max 5000 chars for faster processing)
+        if len(input_text) > 5000:
+            input_text = input_text[:5000] + "\n[... input truncated for performance ...]"
+        
+        # Build previous outputs context (optimized: truncate long outputs for speed)
+        previous_context = ""
+        if component_input.previous_outputs:
+            previous_context = "\n\nPrevious component outputs:\n"
         for prev in component_input.previous_outputs:
             # Truncate long responses for faster processing (keep first 500 chars)
             response_text = prev.output.immediate_response[:500] if len(prev.output.immediate_response) > 500 else prev.output.immediate_response
@@ -469,14 +473,14 @@ async def component_complete(
             if prev.output.notebook and prev.output.notebook != "no update" and len(prev.output.notebook) < 1000:
                 notebook_preview = prev.output.notebook[:500] if len(prev.output.notebook) > 500 else prev.output.notebook
                 previous_context += f"  Notebook: {notebook_preview}\n"
-    
-    # Get conversation history and playbook context
-    conversation_history, playbook_context = await get_context_additions(
-        component_input, context, "complete"
-    )
-    
-    # Build system prompt optimized for accuracy with problem-type-specific guidance
-    system_prompt = """You are a highly precise and accurate AI assistant. Your primary goal is to provide CORRECT, ACCURATE answers above all else.
+        
+        # Get conversation history and playbook context
+        conversation_history, playbook_context = await get_context_additions(
+            component_input, context, "complete"
+        )
+        
+        # Build system prompt optimized for accuracy with problem-type-specific guidance
+        system_prompt = """You are a highly precise and accurate AI assistant. Your primary goal is to provide CORRECT, ACCURATE answers above all else.
 
 CRITICAL QUALITY STANDARDS (in order of importance):
 
@@ -680,12 +684,12 @@ PROCESSING APPROACH:
 6. Format as valid JSON
 
 Remember: ACCURACY IS PARAMOUNT (70% of evaluation). Self-verification is MANDATORY. A correct, well-verified answer is far more valuable than a fast but incorrect one."""
-    
-    if playbook_context:
-        system_prompt += f"\n\nUser preferences and context:\n{playbook_context}"
-    
-    # Build task prompt with advanced prompt engineering for maximum accuracy
-    task_prompt = f"""TASK: {component_input.task}
+        
+        if playbook_context:
+            system_prompt += f"\n\nUser preferences and context:\n{playbook_context}"
+        
+        # Build task prompt with advanced prompt engineering for maximum accuracy
+        task_prompt = f"""TASK: {component_input.task}
 
 INPUT TO PROCESS:
 {input_text}
@@ -787,46 +791,87 @@ RESPONSE REQUIREMENTS:
 - For math problems, format like: "Step 1: [reasoning] → Step 2: [reasoning] → Final Answer: [answer]"
 - Your response must be accurate, complete, relevant, and clearly formatted"""
     
-    # Generate response with optional conversation history (optimized for quality + speed)
-    response = await generate_response(
-        prompt=task_prompt,
-        system_prompt=system_prompt,
-        conversation_history=conversation_history,
-        temperature=0.2,  # Lower temperature for more deterministic, accurate answers
-        max_tokens=4000,  # Increased for comprehensive responses (step-by-step reasoning needs more tokens)
-        response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
-    )
-    
-    # Parse JSON response using robust parsing function
-    immediate_response, notebook_output = parse_json_response(response, "complete", fallback_response=response)
-    
-    # Resolve "no update" for notebook - return previous notebook if exists
-    if notebook_output == "no update" and component_input.previous_outputs:
-        resolved = False
-        for prev in component_input.previous_outputs:
-            if prev.output.notebook and prev.output.notebook != "no update":
-                notebook_output = prev.output.notebook
-                logger.info(f"[complete] Resolved 'no update' to previous notebook from [{prev.component}]")
-                resolved = True
-                break
+        # Generate response with optional conversation history (optimized for quality + speed)
+        try:
+            response = await generate_response(
+                prompt=task_prompt,
+                system_prompt=system_prompt,
+                conversation_history=conversation_history,
+                temperature=0.2,  # Lower temperature for more deterministic, accurate answers
+                max_tokens=4000,  # Increased for comprehensive responses (step-by-step reasoning needs more tokens)
+                response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
+            )
+        except Exception as e:
+            logger.error(f"[complete] Failed to generate LLM response: {str(e)}", exc_info=True)
+            # Fallback response indicating error but maintaining structure
+            error_message = f"I encountered an error while processing your request: {str(e)}. Please try again."
+            response = error_message
         
-        if not resolved:
-            logger.info(f"[complete] No previous notebook found to resolve - keeping 'no update'")
+        # Parse JSON response using robust parsing function
+        immediate_response, notebook_output = parse_json_response(
+            response, "complete", 
+            fallback_response=response if isinstance(response, str) else "I apologize, but I encountered an error processing your request."
+        )
+        
+        # Validate parsed response
+        if not immediate_response or not immediate_response.strip():
+            logger.warning("[complete] Empty immediate_response after parsing, using fallback")
+            immediate_response = "I apologize, but I couldn't generate a valid response. Please try rephrasing your request."
+        
+        # Resolve "no update" for notebook - return previous notebook if exists
+        if notebook_output == "no update" and component_input.previous_outputs:
+            resolved = False
+            for prev in component_input.previous_outputs:
+                if prev.output.notebook and prev.output.notebook != "no update":
+                    notebook_output = prev.output.notebook
+                    logger.info(f"[complete] Resolved 'no update' to previous notebook from [{prev.component}]")
+                    resolved = True
+                    break
+            
+            if not resolved:
+                logger.info(f"[complete] No previous notebook found to resolve - keeping 'no update'")
+        
+        # Store in conversation history (with error handling)
+        try:
+            context.add_user_message(f"Task: {component_input.task}\n{input_text}")
+            context.add_assistant_message(immediate_response)
+        except Exception as e:
+            logger.warning(f"[complete] Failed to save conversation history: {str(e)}")
+            # Continue execution - history save failure shouldn't break the response
+        
+        return ComponentOutput(
+            cid=component_input.cid,
+            task=component_input.task,
+            input=component_input.input,
+            output=ComponentOutputData(
+                immediate_response=immediate_response,
+                notebook=notebook_output  # Resolved: new content, previous notebook, or "no update"
+            ),
+            component="complete"
+        )
     
-    # Store in conversation history
-    context.add_user_message(f"Task: {component_input.task}\n{input_text}")
-    context.add_assistant_message(immediate_response)
-    
-    return ComponentOutput(
-        cid=component_input.cid,
-        task=component_input.task,
-        input=component_input.input,
-        output=ComponentOutputData(
-            immediate_response=immediate_response,
-            notebook=notebook_output  # Resolved: new content, previous notebook, or "no update"
-        ),
-        component="complete"
-    )
+    except Exception as e:
+        logger.error(f"[complete] Critical error processing component: {str(e)}", exc_info=True)
+        # Return error response instead of crashing
+        error_response = f"I apologize, but an error occurred while processing your request: {str(e)}. Please try again or rephrase your question."
+        
+        try:
+            # Try to save error to conversation history
+            context.add_user_message(f"Task: {component_input.task}")
+            context.add_assistant_message(error_response)
+        except Exception:
+            pass  # Ignore history save errors during error handling
+        
+        return ComponentOutput(
+            cid=component_input.cid,
+            task=component_input.task,
+            input=component_input.input,
+            output=ComponentOutputData(
+                immediate_response=error_response,
+                notebook="no update"
+            ),
+            component="complete"
+        )
 
 
 async def component_refine(
