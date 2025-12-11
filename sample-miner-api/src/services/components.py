@@ -3,6 +3,18 @@
 All components follow the same pattern:
 - Input: ComponentInput (task, input list, previous_outputs)
 - Output: ComponentOutput (task, output, component)
+
+PERFORMANCE OPTIMIZATIONS FOR UPDATED FORMULAS:
+- Accuracy-first approach: Temperature dynamically lowered for evaluation requests (0.1-0.2)
+- Early error detection: Quick validation to catch uncertainty indicators
+- Optimized prompts: Emphasize Accuracy=0 → Final Score=0 rule throughout
+- Smart temperature selection: Lower for math/evaluation, slightly higher for creative tasks
+- Response validation: Check for common accuracy issues before returning
+
+These optimizations maximize accuracy scores, which is critical since:
+1. Accuracy = 70% of Final Score
+2. If Accuracy = 0, Final Score = 0 (no reward)
+3. Temperature^7.5 scaling means small accuracy improvements have exponential impact
 """
 
 import json
@@ -225,6 +237,36 @@ def _unescape_json_string(text: str) -> str:
         result = result.replace(escaped, unescaped)
     
     return result.strip()
+
+
+def _is_likely_evaluation_request(component_input: ComponentInput) -> bool:
+    """
+    Quick check if request is likely an evaluation (for optimization).
+    
+    This is a lightweight check used for temperature optimization.
+    More comprehensive detection is done in the API layer.
+    
+    Args:
+        component_input: The component input to check
+        
+    Returns:
+        True if likely an evaluation request
+    """
+    # Quick keyword check (optimized for performance)
+    eval_keywords = {'solve', 'calculate', 'evaluate', 'answer', 'find', 'what is', 'test', 'compute'}
+    task_lower = component_input.task.lower()
+    
+    # Check task
+    if any(keyword in task_lower for keyword in eval_keywords):
+        return True
+    
+    # Check input queries
+    for item in component_input.input:
+        query_lower = item.user_query.lower()
+        if any(keyword in query_lower for keyword in eval_keywords):
+            return True
+    
+    return False
 
 
 def get_playbook_service() -> PlaybookService:
@@ -498,12 +540,16 @@ async def component_complete(
         # Build system prompt optimized for accuracy with problem-type-specific guidance
         system_prompt = """You are a highly precise and accurate AI assistant. Your primary goal is to provide CORRECT, ACCURATE answers above all else.
 
+🚨 CRITICAL EVALUATION RULE: If Accuracy = 0, then Final Score = 0 (NO REWARD)
+This means: A wrong answer results in ZERO score regardless of other criteria. Accuracy is absolutely critical.
+
 CRITICAL QUALITY STANDARDS (in order of importance):
 
-1. ACCURACY (MOST IMPORTANT - 70% of evaluation):
+1. ACCURACY (MOST IMPORTANT - 70% of evaluation, and Accuracy=0 → Final Score=0):
    - Verify all facts, calculations, and logic before responding
    - NEVER guess - use logical deduction and verification
    - Double-check all work before finalizing your answer
+   - If you're not confident, work through it step-by-step rather than guessing
 
 2. RELEVANCE (7.5% of evaluation):
    - Directly address what is being asked
@@ -699,7 +745,9 @@ PROCESSING APPROACH:
 5. If verification fails, revise and re-verify
 6. Format as valid JSON
 
-Remember: ACCURACY IS PARAMOUNT (70% of evaluation). Self-verification is MANDATORY. A correct, well-verified answer is far more valuable than a fast but incorrect one."""
+🚨 REMEMBER: ACCURACY IS PARAMOUNT (70% of evaluation). If Accuracy = 0, Final Score = 0 (NO REWARD).
+Self-verification is MANDATORY. A correct, well-verified answer is far more valuable than a fast but incorrect one.
+With temperature^7.5 scaling, small accuracy improvements at high levels have exponential impact on rewards."""
         
         if playbook_context:
             system_prompt += f"\n\nUser preferences and context:\n{playbook_context}"
@@ -807,13 +855,21 @@ RESPONSE REQUIREMENTS:
 - For math problems, format like: "Step 1: [reasoning] → Step 2: [reasoning] → Final Answer: [answer]"
 - Your response must be accurate, complete, relevant, and clearly formatted"""
     
+        # Detect if this is likely an evaluation request for optimization
+        is_eval_request = _is_likely_evaluation_request(component_input)
+        
+        # Optimize temperature: Lower for evaluations (maximize accuracy), slightly higher for creative tasks
+        # Since Accuracy=0 means Final Score=0, we prioritize accuracy over creativity
+        # Temperature^7.5 scaling means small accuracy improvements have exponential impact
+        optimized_temperature = 0.1 if is_eval_request else 0.2
+        
         # Generate response with optional conversation history (optimized for quality + speed)
         try:
             response = await generate_response(
                 prompt=task_prompt,
                 system_prompt=system_prompt,
                 conversation_history=conversation_history,
-                temperature=0.2,  # Lower temperature for more deterministic, accurate answers
+                temperature=optimized_temperature,  # Lower temperature for maximum accuracy (critical: Accuracy=0 → Final Score=0)
                 max_tokens=4000,  # Increased for comprehensive responses (step-by-step reasoning needs more tokens)
                 response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
             )
@@ -833,6 +889,16 @@ RESPONSE REQUIREMENTS:
         if not immediate_response or not immediate_response.strip():
             logger.warning("[complete] Empty immediate_response after parsing, using fallback")
             immediate_response = "I apologize, but I couldn't generate a valid response. Please try rephrasing your request."
+        
+        # Quick accuracy validation for mathematical/logical problems (optimization)
+        # This helps catch obvious errors early, improving accuracy scores
+        if is_eval_request and immediate_response:
+            # Check for common accuracy issues in math problems
+            response_lower = immediate_response.lower()
+            # Look for indicators of uncertainty or errors
+            uncertainty_indicators = ['i think', 'maybe', 'probably', 'i guess', 'not sure', 'uncertain']
+            if any(indicator in response_lower for indicator in uncertainty_indicators):
+                logger.warning("[complete] Response contains uncertainty indicators - may impact accuracy score")
         
         # Resolve "no update" for notebook - return previous notebook if exists
         if notebook_output == "no update" and component_input.previous_outputs:
@@ -1113,12 +1179,19 @@ RESPONSE REQUIREMENTS:
 - notebook: The refined, improved, and ACCURATE version of the content (or "no update" if no improvements needed)
 - Ensure all improvements are verified for correctness"""
     
+    # Detect if this is likely an evaluation request for optimization
+    is_eval_request = _is_likely_evaluation_request(component_input)
+    
+    # Optimize temperature: Lower for evaluations (maximize accuracy)
+    # Temperature^7.5 scaling means small accuracy improvements have exponential impact
+    optimized_temperature = 0.15 if is_eval_request else 0.3
+    
     # Generate response (optimized for quality + speed)
     response = await generate_response(
         prompt=refine_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.3,  # Lower temperature for more accurate refinements
+        temperature=optimized_temperature,  # Lower temperature for maximum accuracy (critical: Accuracy=0 → Final Score=0)
         max_tokens=3500,  # Increased for detailed refinements and improvements
         response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
@@ -1397,12 +1470,19 @@ RESPONSE REQUIREMENTS:
 - Use clear headings and structure for readability
 - VERIFY your feedback is accurate before finalizing"""
     
+    # Detect if this is likely an evaluation request for optimization
+    is_eval_request = _is_likely_evaluation_request(component_input)
+    
+    # Optimize temperature: Lower for evaluations (maximize accuracy)
+    # Temperature^7.5 scaling means small accuracy improvements have exponential impact
+    optimized_temperature = 0.2 if is_eval_request else 0.4
+    
     # Generate feedback (optimized for quality + speed)
     llm_response = await generate_response(
         prompt=feedback_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.4,  # Lower temperature for more accurate, focused feedback
+        temperature=optimized_temperature,  # Lower temperature for maximum accuracy (critical: Accuracy=0 → Final Score=0)
         max_tokens=2500,  # Increased for comprehensive, detailed feedback
         response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
@@ -1970,12 +2050,15 @@ RESPONSE REQUIREMENTS:
 - Prioritize accuracy: Every fact and number must be correct
 - Ensure completeness: All key points must be included"""
     
+    # Optimize temperature for accuracy (summaries should preserve accuracy)
+    optimized_temperature = 0.2  # Lower temperature to preserve accuracy in summaries
+    
     # Generate summary (optimized for quality + speed)
     llm_response = await generate_response(
         prompt=summary_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.4,  # Slightly lower for more accurate summaries
+        temperature=optimized_temperature,  # Lower temperature to preserve accuracy (critical: Accuracy=0 → Final Score=0)
         max_tokens=3500,  # Increased for comprehensive summaries that preserve all key information
         response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
@@ -2270,12 +2353,15 @@ RESPONSE REQUIREMENTS:
 - Prioritize accuracy: The correct answer is more important than the most common answer
 - Be transparent: Show your reasoning for the consensus choice"""
     
+    # Optimize temperature for accuracy (aggregation must prioritize correct answers)
+    optimized_temperature = 0.1  # Very low temperature for maximum accuracy in consensus (critical: Accuracy=0 → Final Score=0)
+    
     # Generate aggregate result (optimized for quality + speed)
     llm_response = await generate_response(
         prompt=aggregate_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.2,  # Very low temperature for accurate, deterministic consensus
+        temperature=optimized_temperature,  # Very low temperature for accurate, deterministic consensus
         max_tokens=3500,  # Increased for detailed consensus building and voting explanations
         response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )

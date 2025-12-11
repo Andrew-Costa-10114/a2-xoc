@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     vllm_model: str = "hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
     vllm_api_key: str = ""  # Set via VLLM_API_KEY if using vLLM
     
-    # Model Configuration (optimized for quality + speed balance)
-    max_tokens: int = 3500  # Increased for better quality responses while JSON mode maintains speed
-    temperature: float = 0.7
+    # Model Configuration (optimized for accuracy + speed balance)
+    # Note: Temperature is dynamically optimized per request (lower for evaluations to maximize accuracy)
+    max_tokens: int = 4000  # Increased for comprehensive responses with step-by-step reasoning
+    temperature: float = 0.2  # Default temperature (lowered for better accuracy, overridden per request)
     
     # Conversation History Settings
     max_conversation_messages: int = 10

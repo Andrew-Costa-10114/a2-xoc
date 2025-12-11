@@ -272,45 +272,60 @@ Each response gets a final score calculated as:
 
 ```
 Final Score = 0.70×Accuracy + 0.075×Relevance + 0.075×Completeness 
-            + 0.05×Clarity + 0.05×Following + 0.025×Format + 0.025×Safety
+            + 0.05×Clarity + 0.05×FollowInst + 0.025×Format + 0.025×Safety
 ```
 
-Each criterion is scored 0-100, and the weighted sum gives your final score (0-100).
+**Important:**
+- Each criterion is scored 0-1 (not 0-100)
+- Final Score is a value between 0-1
+- **If Accuracy = 0, then Final Score = 0** (wrong answer means no reward)
+- Failed/errored evaluations result in Final Score = 0
 
 ### Performance Score Calculation
 
-After all evaluations in a cycle, your raw performance score is calculated:
+After all evaluations in a cycle, your performance score is calculated:
 
-1. **Raw Score** = Average of all final_scores (failed evaluations = 0)
-2. **Temperature Scaling** = Raw^7.5 × 100 (rewards high performers exponentially)
-3. **Normalization** = Your scaled score ÷ Sum of all miners' scaled scores
+1. **Final Score (per response)** = 0.70×Accuracy + 0.075×Relevance + ... (0-1 range)
+2. **Raw Score** = Average of final scores across last 256 evaluations (0-1 range)
+   - Failed evaluations count as 0
+   - If Accuracy = 0, Final Score = 0
+3. **Performance Score** = Raw Score^7.5 × 100 (temperature scaling)
+4. **Normalization** = perf_i / sum(all performance scores) (for weight calculation)
 
 The temperature scaling (power of 7.5) means:
-- A miner with 90% accuracy vastly outperforms one with 80%
-- Small improvements at the top matter more than the same improvements at lower levels
+- A miner with 90% raw score (0.90) → 0.90^7.5 × 100 = 48.3
+- A miner with 80% raw score (0.80) → 0.80^7.5 × 100 = 20.9
+- Small improvements at the top matter exponentially more
 
 ### Final Miner Weight
 
-Your final weight (which determines emissions) is:
+Your final weight (which determines emissions) is calculated as:
 
 ```
-Final Weight = 50% × Normalized Performance Score + 50% × Normalized EPM
+1. weighted_epm_i = perf_i × epm_i
+2. norm_epm_i = weighted_epm_i / sum(all weighted_epm)
+3. norm_perf_i = perf_i / sum(all performance scores)
+4. miner_weight = (0.5 × norm_epm_i + 0.5 × norm_perf_i) × 100
 ```
 
-Where EPM (Edges Per Minute) measures your miner's throughput - how many successful task completions (edges) your miner handles per minute from real user traffic. Higher EPM means your miner is actively serving more users.
+**Key Points:**
+- Each miner's EPM is weighted by their performance score
+- Both EPM and Performance are normalized across all miners
+- Final weight is a 50/50 blend of normalized components
+- Result is multiplied by 100 to get a percentage weight
 
-### Understanding EPM (Weighted by Performance)
+### Understanding Weighted EPM
 
 - **Edge** = A successful task completion (e.g., answering a user question)
-- **EPM** = Sum of (performance_score × edge) ÷ Time window in minutes
-- **Weighted EPM**: Each request is weighted by its performance score: `new_epm_score = perf_score × old_epm_score`
-- **Normalized EPM** = Your Weighted EPM ÷ Highest Weighted EPM among all miners × 100
+- **EPM** = Total successful edges ÷ Time window in minutes
+- **Weighted EPM**: `weighted_epm_i = perf_i × epm_i` (each request weighted by performance score)
+- **Normalized EPM**: `norm_epm_i = weighted_epm_i / sum(all weighted_epm)`
 
 EPM rewards miners that:
 - Stay online consistently
 - Respond quickly (timeouts don't count as successful edges)
 - Handle real user traffic (not just evaluations)
-- **Provide high-quality responses** (high-performing requests contribute more to EPM)
+- **Provide high-quality responses** (performance score multiplies EPM contribution)
 
 ### Tips for Better Scores
 

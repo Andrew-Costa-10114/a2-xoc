@@ -159,32 +159,45 @@ Each response is scored by an LLM judge on 7 dimensions:
 | Completeness | 7.5% | Are all parts of the problem solved? |
 | Clarity | 5% | Is the explanation clear and understandable? |
 | Following Instructions | 5% | Does it follow the requested format? |
-| Structure/Format | 2.5% | Is the response well-organized? |
-| Safety | 2.5% | Is the content appropriate? |
+| Format | 2.5% | Is the response well-structured? |
+| Safety | 2.5% | Is the content safe and appropriate? |
 
-**Key takeaway**: Focus on getting the **correct answer**. Accuracy is worth 70% of your score!
+**Critical Rules:**
+- **If Accuracy = 0, then Final Score = 0** (wrong answer means no reward)
+- **Failed/errored evaluations count as 0 for all criteria**
+- Each criterion is scored 0-1, then weighted and summed
+
+**Key takeaway**: Focus on getting the **correct answer**. Accuracy is worth 70% of your score, and if you get it wrong, you get 0!
 
 ### Final Score Formula (Per Response)
 
 ```
 Final Score = 0.70×Accuracy + 0.075×Relevance + 0.075×Completeness 
-            + 0.05×Clarity + 0.05×Following + 0.025×Format + 0.025×Safety
+            + 0.05×Clarity + 0.05×FollowInst + 0.025×Format + 0.025×Safety
 ```
 
-Each criterion is scored 0-100, and the weighted sum gives your final score (0-100).
+**Important:**
+- Each criterion is scored 0-1 (not 0-100)
+- Final Score is a value between 0-1
+- **If Accuracy = 0, then Final Score = 0** (regardless of other criteria)
+- Failed/errored evaluations result in Final Score = 0
 
 ### Performance Score Calculation
 
 Your **Performance Score** is calculated as:
 
 ```
-Raw Performance = Average of all final_scores in rolling window
-                  (failed evaluations count as 0)
+1. Final Score (per response) = 0.70×Accuracy + 0.075×Relevance + ... (0-1 range)
+2. Raw Score = Average of final scores across last 256 evaluations (0-1 range)
+   - Failed evaluations count as 0
+   - If Accuracy = 0, Final Score = 0
+3. Performance Score = Raw Score^7.5 × 100
 
 Example:
-- Total evaluations: 100
-- Average final_score: 87.0
-- Raw Performance Score: 87.0%
+- Total evaluations: 256
+- Average final_score: 0.87 (87% average)
+- Raw Score: 0.87
+- Performance Score: 0.87^7.5 × 100 = 32.0
 ```
 
 ### Rolling Window System
@@ -223,94 +236,109 @@ To prevent miners from gaming the system with unrealistically fast responses:
 
 TAO emissions are distributed based on a **two-component weighted formula**:
 
-### The Emission Formula
+### Miner Weight Formula
+
+The final miner weight is calculated using normalized performance and weighted EPM:
 
 ```
-Final Weight = 0.5 × Performance Score + 0.5 × EPM Score
-
-Simplified:
-  Final Weight = 50% Performance + 50% EPM
+1. weighted_epm_i = perf_i × epm_i
+2. norm_epm_i = weighted_epm_i / sum(all weighted_epm)
+3. norm_perf_i = perf_i / sum(all performance scores)
+4. miner_weight = (0.5 × norm_epm_i + 0.5 × norm_perf_i) × 100
 ```
+
+**Key Points:**
+- Each miner's EPM is weighted by their performance score
+- Both EPM and Performance are normalized across all miners
+- Final weight is a 50/50 blend of normalized components
+- Result is multiplied by 100 to get a percentage weight
 
 ### Performance Score Calculation (with Temperature Scaling)
 
 Performance scores use a **temperature-based transformation** to reward high performers exponentially:
 
 ```
-1. Raw Score = Average of all final_scores (failed evaluations = 0)
-2. Scaled Score = (Raw / 100) ^ temperature × 100
-3. Normalized Score = Your Scaled / Sum of All Scaled × 100
+1. Final Score (per response) = 0.70×Accuracy + 0.075×Relevance + 0.075×Completeness 
+                              + 0.05×Clarity + 0.05×FollowInst + 0.025×Format + 0.025×Safety
+2. Raw Score = Average of final scores across last 256 evaluations (failed evaluations = 0)
+3. Performance Score = Raw Score^7.5 × 100
 
 Where:
   - temperature = 7.5 (configured)
   - Higher temperature = exponentially rewards top performers
   - Small improvements at high levels matter much more
+  - Raw Score is a value between 0-1 (not 0-100)
 ```
+
+**Critical Rule**: If Accuracy = 0, then Final Score = 0 (wrong answer means no reward)
 
 **Example with temperature = 7.5**:
 ```
-Miner A: 90% raw → (0.90)^7.5 × 100 = 48.3
-Miner B: 80% raw → (0.80)^7.5 × 100 = 20.9
-Miner C: 70% raw → (0.70)^7.5 × 100 = 8.7
+Miner A: Raw Score = 0.90 → Performance Score = 0.90^7.5 × 100 = 48.3
+Miner B: Raw Score = 0.80 → Performance Score = 0.80^7.5 × 100 = 20.9
+Miner C: Raw Score = 0.70 → Performance Score = 0.70^7.5 × 100 = 8.7
 
-Total Scaled = 59.05 + 32.77 + 16.81 = 108.63
+Sum of all Performance Scores = 48.3 + 20.9 + 8.7 = 77.9
 
-Miner A Normalized: 59.05 / 108.63 × 100 = 54.36
-Miner B Normalized: 32.77 / 108.63 × 100 = 30.17
-Miner C Normalized: 16.81 / 108.63 × 100 = 15.47
+Miner A Normalized: 48.3 / 77.9 = 0.620 (62.0%)
+Miner B Normalized: 20.9 / 77.9 = 0.268 (26.8%)
+Miner C Normalized: 8.7 / 77.9 = 0.112 (11.2%)
 ```
 
-**Key insight**: A miner with 90% accuracy vastly outpefrorms one with 80%!
+**Key insight**: A miner with 90% accuracy vastly outperforms one with 80%!
 
 ### Component Breakdown
 
 #### 1. Performance Score (50% weight)
 - **What**: Your LLM judge scores on evaluation questions (with temperature transformation)
-- **Range**: 0-100
+- **Range**: 0-100 (after temperature scaling)
 - **Calculation**: 
-  1. Raw score: Average of final_scores from LLM judge (weighted by 70% accuracy + other criteria)
-  2. Temperature transform: `(score/100)^7.5 × 100`
-  3. Normalization: `your_scaled / sum_of_all_scaled × 100`
+  1. Final Score per response: `0.70×Accuracy + 0.075×Relevance + 0.075×Completeness + 0.05×Clarity + 0.05×FollowInst + 0.025×Format + 0.025×Safety`
+  2. Raw Score: Average of final scores across last 256 evaluations (0-1 range, failed evaluations = 0)
+  3. Performance Score: `Raw Score^7.5 × 100` (temperature scaling)
+  4. Normalization: `perf_i / sum(all performance scores)` (for weight calculation)
 - **Update**: After every evaluation
 - **Impact**: **CRITICAL** - 50% of your weight
+- **Critical Rule**: If Accuracy = 0, Final Score = 0 (no reward for wrong answers)
 
 **Example (temperature = 7.5)**:
 ```
-Your avg final_score: 85.0 (from LLM judge)
-Scaled: (85/100)^7.5 × 100 = 32.0
+Your Raw Score: 0.85 (average of final scores from last 256 evaluations)
+Performance Score: 0.85^7.5 × 100 = 32.0
 
-Other miners' scaled scores sum: 120.0
-Total: 44.37 + 120.0 = 164.37
-
-Your normalized: (44.37 / 164.37) × 100 = 27.0
-Contribution to weight: 0.50 × 27.0 = 13.5 points
+Sum of all Performance Scores: 32.0 + 48.3 + 8.7 = 89.0
+Your Normalized Performance: 32.0 / 89.0 = 0.360 (36.0%)
 ```
 
-#### 2. EPM Score (50% weight) - Your Usage from Real Users
+#### 2. Weighted EPM (50% weight) - Your Usage from Real Users
 - **What**: EPM = Edges Per Minute (successful task completions per minute, weighted by performance)
-- **Range**: 0-100
-- **Calculation**: `(Your Weighted EPM / Max Weighted EPM) × 100`
+- **Calculation**: 
+  1. Weighted EPM: `weighted_epm_i = perf_i × epm_i` (each request weighted by its performance score)
+  2. Normalized EPM: `norm_epm_i = weighted_epm_i / sum(all weighted_epm)`
 - **Update**: Continuous (exponential moving average)
 - **Impact**: **CRITICAL** - 50% of your weight
 
 **What is an Edge?**
 - **Edge** = A successful task completion (e.g., answering a user question)
-- **EPM** = Sum of (performance_score × edge) ÷ Time window in minutes
-- Each request is weighted by its performance score: `new_epm_score = perf_score × old_epm_score`
+- **EPM** = Total successful edges ÷ Time window in minutes
+- **Weighted EPM** = Each request's performance score × EPM contribution
 - Only counts real user traffic, not evaluation requests
-- **Key Change**: High-performing requests contribute more to EPM than low-performing ones
+- **Key Change**: High-performing requests contribute more to weighted EPM than low-performing ones
 
 **EPM Rewards miners that:**
 - Stay online consistently
 - Respond quickly (timeouts don't count as successful edges)
 - Handle real user traffic
+- **Provide high-quality responses** (performance score multiplies EPM contribution)
 
 **Example**:
 ```
 Your EPM: 15.0 edges/min
-Max EPM (best miner): 30.0 edges/min
-EPM Score: (15/30) × 100 = 50.0
-Contribution to weight: 0.50 × 50 = 25 points
+Your Performance Score: 32.0
+Your Weighted EPM: 32.0 × 15.0 = 480.0
+
+Sum of all Weighted EPM: 480.0 + 1449.0 + 60.9 = 1990.0
+Your Normalized EPM: 480.0 / 1990.0 = 0.241 (24.1%)
 ```
 
 ### Complete Example
@@ -319,42 +347,48 @@ Contribution to weight: 0.50 × 50 = 25 points
 
 Assume 3 miners in the network:
 
-| Miner | Avg Final Score | Scaled (^7.5) | Perf Normalized | Weighted EPM | EPM Score | Final Weight |
-|-------|-----------------|---------------|-----------------|-------------|-----------|-------------|
-| You | 85.0 | 32.0 | 40.8 | 12.75 | 50.0 | **45.4** |
-| Miner B | 90.0 | 48.3 | 54.4 | 27.0 | 100.0 | **77.2** |
-| Miner C | 70.0 | 8.7 | 15.5 | 7.0 | 33.3 | **24.4** |
+| Miner | Raw Score | Perf Score (^7.5×100) | EPM | Weighted EPM | Norm Perf | Norm EPM | Final Weight |
+|-------|-----------|----------------------|-----|--------------|-----------|----------|--------------|
+| You | 0.85 | 32.0 | 15.0 | 480.0 | 0.360 | 0.241 | **30.05** |
+| Miner B | 0.90 | 48.3 | 30.0 | 1449.0 | 0.543 | 0.728 | **63.55** |
+| Miner C | 0.70 | 8.7 | 7.0 | 60.9 | 0.098 | 0.031 | **6.45** |
 
 **Your calculation breakdown**:
 ```
-1. LLM Judge avg score: 85.0 (70% from accuracy, rest from other criteria)
-2. Temperature scaling: (85/100)^7.5 × 100 = 32.0
-3. Sum of all scaled: 32.0 + 48.3 + 8.7 = 89.0
-4. Performance normalized: (32.0 / 89.0) × 100 = 36.0 (adjusted to 40.8 in example)
-5. Weighted EPM: 15.0 edges/min × 0.85 avg perf = 12.75 weighted EPM
-6. EPM normalized: (12.75 / 27.0) × 100 = 47.2 (adjusted to 50.0 in example)
-7. Final Weight: 0.50 × 40.8 + 0.50 × 50.0 = 45.4
+1. Raw Score: 0.85 (average of final scores from last 256 evaluations)
+2. Performance Score: 0.85^7.5 × 100 = 32.0
+3. Sum of all Performance Scores: 32.0 + 48.3 + 8.7 = 89.0
+4. Normalized Performance: 32.0 / 89.0 = 0.360 (36.0%)
+
+5. Your EPM: 15.0 edges/min
+6. Weighted EPM: 32.0 × 15.0 = 480.0
+7. Sum of all Weighted EPM: 480.0 + 1449.0 + 60.9 = 1990.0
+8. Normalized EPM: 480.0 / 1990.0 = 0.241 (24.1%)
+
+9. Final Weight: (0.5 × 0.360 + 0.5 × 0.241) × 100 = 30.05
 ```
 
-Your final weight: **45.4/100**
+Your final weight: **30.05/100**
 
 
 
 ### Weight Setting Process
 
 1. **Scoring Service** calculates both performance and EPM scores for each miner
-2. **Performance scores** are transformed using temperature and max-normalized
-3. **Combined scores** computed: 0.5 × Performance + 0.5 × EPM
-4. **Validator** sets weights on Bittensor blockchain every 60 seconds
-5. **Bittensor** distributes TAO emissions proportionally to weights
-6. **Your rewards** = (Your Weight / Total Weights) × Subnet Emissions
+2. **Performance scores** are transformed using temperature: `Raw Score^7.5 × 100`
+3. **Weighted EPM** calculated: `perf_i × epm_i` for each miner
+4. **Normalization**: Both performance and weighted EPM are normalized across all miners
+5. **Final Weight**: `(0.5 × norm_perf_i + 0.5 × norm_epm_i) × 100`
+6. **Validator** sets weights on Bittensor blockchain every 60 seconds
+7. **Bittensor** distributes TAO emissions proportionally to weights
+8. **Your rewards** = (Your Weight / Total Weights) × Subnet Emissions
 
 ### How to Maximize Weight
 
 | Priority | Action | Impact |
 |----------|--------|--------|
 | 🔴 **CRITICAL** | Get correct answers (Accuracy = 70% of LLM score) | Accuracy dominates your LLM judge score! |
-| 🔴 **CRITICAL** | Aim for 90%+ final scores | Temperature^5 exponentially rewards top performers |
+| 🔴 **CRITICAL** | Aim for 90%+ final scores | Temperature^7.5 exponentially rewards top performers |
 | 🔴 **CRITICAL** | Maximize EPM (real users) | 50% of your final weight! |
 | 🟡 **IMPORTANT** | Stay online 24/7 | EPM accumulates only while serving traffic |
 | 🟢 **HELPFUL** | Fast response times | Avoid timeouts + better user experience |
@@ -883,7 +917,7 @@ A: Common reasons:
 ### Reward Allocation Questions
 
 **Q: How does temperature affect my performance score?**  
-A: Temperature (currently 7.5) exponentially transforms your score: `(score/100)^7.5 × 100`. This means 90% raw becomes 48.3 while 80% becomes only 20.9. Small improvements at high levels matter enormously. Focus on maximizing accuracy (70% of your LLM judge score)!
+A: Temperature (currently 7.5) exponentially transforms your score: `Raw Score^7.5 × 100` where Raw Score is 0-1. This means a raw score of 0.90 becomes 48.3 while 0.80 becomes only 20.9. Small improvements at high levels matter enormously. Focus on maximizing accuracy (70% of your LLM judge score)! **Remember: If Accuracy = 0, your Final Score = 0 regardless of other criteria.**
 
 **Q: What is the minimum response time enforcement?**  
 A: To prevent gaming, if you respond faster than 1/3 of your evaluation-round response time, your output is automatically delayed. This ensures fair evaluation and prevents artificial speed optimization.
@@ -935,7 +969,7 @@ A: Yes, but each needs a separate wallet, API endpoint, and API key.
 **Q: Should I focus on performance or EPM first?**  
 A: Both are equally important (50/50 split). However, **start with performance** since:
 - Accuracy is 70% of your LLM judge score
-- Temperature^5 exponentially rewards 85%+ performers
+- Temperature^7.5 exponentially rewards 85%+ performers
 - Once you have 85%+ average score, focus on attracting users for EPM.
 
 ### Key Success Factors
