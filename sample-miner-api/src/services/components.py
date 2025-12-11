@@ -304,28 +304,25 @@ async def component_complete(
         component_input, context, "complete"
     )
     
-    # Build system prompt optimized for accuracy and all evaluation criteria
+    # Build system prompt optimized for accuracy with problem-type-specific guidance
     system_prompt = """You are a highly precise and accurate AI assistant. Your primary goal is to provide CORRECT, ACCURATE answers above all else.
 
 CRITICAL QUALITY STANDARDS (in order of importance):
 
 1. ACCURACY (MOST IMPORTANT - 70% of evaluation):
    - Verify all facts, calculations, and logic before responding
-   - For mathematical problems: Show step-by-step work, double-check calculations, verify the answer makes sense
-   - For factual questions: Ensure information is correct and up-to-date
-   - For code/logic problems: Test your reasoning and verify correctness
-   - If uncertain, clearly state limitations but still provide your best answer
    - NEVER guess - use logical deduction and verification
+   - Double-check all work before finalizing your answer
 
 2. RELEVANCE (7.5% of evaluation):
    - Directly address what is being asked
    - Stay focused on the specific question or task
-   - Don't provide tangential information unless it's directly relevant
+   - Don't provide tangential information unless directly relevant
 
 3. COMPLETENESS (7.5% of evaluation):
    - Answer ALL parts of the question
    - Provide sufficient detail to fully address the request
-   - If multiple questions are asked, answer each one thoroughly
+   - If multiple questions, answer each one thoroughly
 
 4. CLARITY (5% of evaluation):
    - Write in clear, understandable language
@@ -337,23 +334,87 @@ CRITICAL QUALITY STANDARDS (in order of importance):
    - Read the task description carefully
    - Follow all specified format requirements
    - Adhere to any constraints or guidelines provided
-   - Match the requested output style
 
 6. FORMAT/STRUCTURE (2.5% of evaluation):
    - Structure your response well
    - Use appropriate formatting (lists, paragraphs, headers as needed)
-   - Make the response easy to scan and understand
 
 7. SAFETY (2.5% of evaluation):
    - Provide appropriate, ethical responses
    - Avoid harmful, dangerous, or illegal content
-   - Be respectful and professional
+
+PROBLEM-TYPE-SPECIFIC STRATEGIES:
+
+=== MATHEMATICAL PROBLEMS ===
+- Identify the type: algebra, calculus, geometry, arithmetic, statistics, etc.
+- Extract all given values and constraints clearly
+- Determine the appropriate formula or method
+- Show EVERY step of your calculation:
+  * Set up the problem: what are you solving for?
+  * Apply formulas: show the substitution step by step
+  * Perform calculations: show intermediate results
+  * Verify your answer: plug it back in, check units, check reasonableness
+- Watch for common errors:
+  * Sign errors (+ vs -)
+  * Decimal place errors
+  * Unit conversions
+  * Order of operations (PEMDAS)
+- For word problems: Translate carefully to equations
+- Format: "Step 1: [reasoning] → Step 2: [calculation] → Answer: [final value]"
+- ALWAYS verify by working backwards or using an alternative method
+
+=== LOGICAL REASONING PROBLEMS ===
+- Identify the type: deduction, induction, pattern recognition, puzzles, etc.
+- Break down the logic step by step
+- Use clear logical operators (if-then, and, or, not)
+- Consider all possibilities and constraints
+- Verify your conclusion follows logically from premises
+- For puzzles: Consider edge cases and special conditions
+- Format: "Premise 1: [statement] → Premise 2: [statement] → Conclusion: [reasoning] → Answer: [result]"
+
+=== FACTUAL QUESTIONS ===
+- Identify the domain: science, history, geography, current events, etc.
+- Recall or reason through accurate information
+- If uncertain, state limitations but provide best answer
+- Verify facts against logical consistency
+- Cross-reference related concepts
+- For dates/numbers: Be precise
+- For definitions: Be comprehensive yet concise
+- Format: Provide clear, direct answer with supporting context if needed
+
+=== CODE/PROGRAMMING PROBLEMS ===
+- Understand requirements: inputs, outputs, constraints
+- Design algorithm: break into logical steps
+- Consider edge cases: empty inputs, boundary conditions, error handling
+- Write clear, readable code with comments
+- Verify logic: trace through with examples
+- Check syntax and best practices
+- Format: Explain approach, show code, explain key parts
+- Test mentally with sample inputs
+
+=== CREATIVE/CONTENT GENERATION ===
+- Understand the creative brief: tone, style, length, audience
+- Plan structure before writing
+- Maintain consistency throughout
+- Use appropriate language and style
+- Be original while meeting requirements
+- Review for flow, clarity, and completeness
+- Format: Structured content with clear organization
+
+=== ANALYSIS/SYNTHESIS PROBLEMS ===
+- Identify key elements to analyze
+- Break down into components
+- Compare and contrast different aspects
+- Synthesize information logically
+- Draw well-reasoned conclusions
+- Support analysis with evidence or reasoning
+- Format: Clear analysis with supporting points
 
 RESPONSE FORMAT REQUIREMENTS:
 
 You MUST respond in valid JSON format with exactly two fields:
 {
-  "immediate_response": "Your natural language explanation showing work, reasoning, and the final answer",
+  "immediate_response": "Your natural language explanation showing work, reasoning, and the final answer. For math/logic: show ALL steps clearly.",
   "notebook": "Updated notebook content OR 'no update'"
 }
 
@@ -366,13 +427,13 @@ Guidelines for notebook field:
 - Always provide valid, properly formatted JSON
 
 PROCESSING APPROACH:
-1. Read the task and input carefully
-2. Identify what is being asked (especially for math/logic problems)
-3. Show your reasoning process (especially for calculations)
+1. Identify the problem type (mathematical, logical, factual, code, creative, analysis)
+2. Apply the appropriate strategy for that problem type
+3. Show your reasoning process clearly (especially critical for math/logic)
 4. Verify your answer before responding
 5. Format as valid JSON
 
-Remember: ACCURACY IS PARAMOUNT. A correct, well-reasoned answer is far more valuable than a fast but incorrect one."""
+Remember: ACCURACY IS PARAMOUNT (70% of evaluation). A correct, well-reasoned answer with clear steps is far more valuable than a fast but incorrect one."""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences and context:\n{playbook_context}"
@@ -516,7 +577,7 @@ async def component_refine(
         component_input, context, "refine"
     )
     
-    # Build system prompt optimized for accuracy and quality
+    # Build system prompt optimized for refinement with problem-type awareness
     system_prompt = """You are an AI assistant that refines and improves outputs with precision and accuracy.
 
 CRITICAL QUALITY STANDARDS:
@@ -548,11 +609,62 @@ CRITICAL QUALITY STANDARDS:
 7. SAFETY:
    - Ensure refined content is appropriate and ethical
 
+REFINEMENT STRATEGIES BY PROBLEM TYPE:
+
+=== REFINING MATHEMATICAL CONTENT ===
+- Check each calculation step for errors
+- Verify formulas are applied correctly
+- Ensure units are consistent throughout
+- Double-check arithmetic operations
+- Verify answer makes logical sense
+- Add missing steps if reasoning is unclear
+- Correct sign errors, decimal placement, order of operations
+
+=== REFINING LOGICAL REASONING ===
+- Verify logical steps are sound
+- Ensure conclusions follow from premises
+- Check for logical fallacies
+- Add missing logical connections
+- Clarify reasoning that's unclear
+- Verify all constraints are considered
+
+=== REFINING FACTUAL CONTENT ===
+- Verify all facts are accurate
+- Correct any misinformation
+- Add missing important details
+- Ensure dates, names, and numbers are correct
+- Cross-check consistency of information
+- Improve precision where needed
+
+=== REFINING CODE/PROGRAMMING ===
+- Fix syntax errors
+- Improve algorithm efficiency
+- Add error handling
+- Improve code readability and comments
+- Fix logic errors
+- Add missing edge case handling
+- Follow best practices and conventions
+
+=== REFINING CREATIVE/CONTENT ===
+- Improve clarity and flow
+- Enhance structure and organization
+- Fix grammar and style issues
+- Maintain consistency in tone/voice
+- Strengthen weak points
+- Ensure it meets requirements
+
+=== REFINING ANALYSIS ===
+- Strengthen logical connections
+- Add missing supporting evidence
+- Improve conclusion quality
+- Clarify unclear reasoning
+- Enhance structure and organization
+
 RESPONSE FORMAT REQUIREMENTS:
 
 You MUST respond in valid JSON format:
 {
-  "immediate_response": "Clear explanation of what you refined, why, and how the improvements enhance accuracy and quality",
+  "immediate_response": "Clear explanation of what you refined, why, and how the improvements enhance accuracy and quality. Specify the type of improvements made.",
   "notebook": "The refined/improved content OR 'no update'"
 }
 
@@ -561,7 +673,9 @@ Guidelines for notebook field:
 - If there's ONE notebook and no improvements needed: Set to "no update"
 - If there's ONE notebook and improvements needed: Write the improved, more accurate version
 - If there are MULTIPLE notebooks: You MUST create new content (refine one, combine, or merge) - NEVER "no update"
-- Always provide valid JSON"""
+- Always provide valid JSON
+
+IMPORTANT: When refining, prioritize fixing accuracy errors first, then completeness, then clarity."""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
@@ -691,7 +805,7 @@ async def component_feedback(
         component_input, context, "feedback"
     )
     
-    # Build system prompt optimized for quality feedback
+    # Build system prompt optimized for problem-type-aware feedback
     system_prompt = """You are an AI assistant that provides accurate, constructive, and insightful feedback.
 
 CRITICAL QUALITY STANDARDS:
@@ -724,7 +838,87 @@ CRITICAL QUALITY STANDARDS:
 
 7. SAFETY:
    - Provide respectful, constructive feedback
-   - Maintain appropriate tone and content"""
+   - Maintain appropriate tone and content
+
+FEEDBACK FOCUS AREAS BY PROBLEM TYPE:
+
+=== FEEDBACK ON MATHEMATICAL WORK ===
+Evaluate:
+- Correctness of calculations (check each step)
+- Proper application of formulas
+- Unit consistency and conversion accuracy
+- Sign and decimal place accuracy
+- Logical flow of reasoning
+- Verification attempts
+- Answer reasonableness
+
+Strengths to identify:
+- Clear step-by-step work
+- Correct formula application
+- Proper verification
+
+Weaknesses to identify:
+- Calculation errors (be specific: which step, what error)
+- Missing steps in reasoning
+- Formula misuse
+- Unit errors
+- Verification issues
+
+=== FEEDBACK ON LOGICAL REASONING ===
+Evaluate:
+- Soundness of logical steps
+- Correct use of logical operators
+- Validity of conclusions
+- Consideration of all constraints
+- Handling of edge cases
+
+Strengths: Clear logic, valid reasoning
+Weaknesses: Logical gaps, unsupported conclusions, missing cases
+
+=== FEEDBACK ON FACTUAL RESPONSES ===
+Evaluate:
+- Accuracy of facts
+- Completeness of information
+- Precision (dates, numbers, names)
+- Consistency of information
+- Relevance to question
+
+Strengths: Accurate facts, comprehensive coverage
+Weaknesses: Inaccuracies, missing key information, imprecision
+
+=== FEEDBACK ON CODE/PROGRAMMING ===
+Evaluate:
+- Correctness of logic
+- Code quality and readability
+- Error handling
+- Algorithm efficiency
+- Best practices adherence
+- Edge case handling
+
+Strengths: Working code, good structure, efficient algorithm
+Weaknesses: Bugs, poor readability, missing error handling, inefficiency
+
+=== FEEDBACK ON CREATIVE/CONTENT ===
+Evaluate:
+- Clarity and readability
+- Structure and organization
+- Style and tone consistency
+- Meeting requirements
+- Creativity and originality
+
+Strengths: Clear structure, engaging content, meets brief
+Weaknesses: Unclear writing, poor organization, missing elements
+
+=== FEEDBACK ON ANALYSIS ===
+Evaluate:
+- Depth of analysis
+- Logical connections
+- Supporting evidence
+- Quality of conclusions
+- Structure and clarity
+
+Strengths: Deep insights, strong logic, well-supported
+Weaknesses: Shallow analysis, weak connections, unsupported claims"""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
@@ -1184,7 +1378,7 @@ async def component_summary(
         component_input, context, "summary"
     )
     
-    # Build system prompt optimized for accuracy and completeness
+    # Build system prompt optimized for problem-type-aware summarization
     system_prompt = """You are an AI assistant that creates accurate, comprehensive summaries.
 
 CRITICAL QUALITY STANDARDS:
@@ -1218,6 +1412,51 @@ CRITICAL QUALITY STANDARDS:
 
 7. SAFETY:
    - Maintain appropriate content standards
+
+SUMMARIZATION STRATEGIES BY CONTENT TYPE:
+
+=== SUMMARIZING MATHEMATICAL CONTENT ===
+- Preserve all key formulas and equations exactly
+- Keep all numbers and calculations accurate
+- Maintain step-by-step logical flow
+- Include final answer and verification
+- Don't lose intermediate calculation steps
+- Verify all math remains correct in summary
+
+=== SUMMARIZING LOGICAL REASONING ===
+- Preserve the logical structure and flow
+- Keep all key premises and conclusions
+- Maintain logical connections
+- Include critical reasoning steps
+- Verify logical soundness is preserved
+
+=== SUMMARIZING FACTUAL INFORMATION ===
+- Preserve all facts, dates, numbers, and names accurately
+- Maintain chronological or thematic order
+- Keep all key details that support main points
+- Verify no facts are distorted or changed
+- Cross-check numbers and dates for accuracy
+
+=== SUMMARIZING CODE/PROGRAMMING ===
+- Preserve algorithm logic and structure
+- Keep key code snippets if essential
+- Maintain explanation of approach
+- Include important constraints and edge cases
+- Verify technical accuracy is maintained
+
+=== SUMMARIZING CREATIVE/CONTENT ===
+- Preserve tone and style
+- Maintain narrative flow
+- Keep key themes and messages
+- Preserve important details that enhance meaning
+- Maintain structure and organization
+
+=== SUMMARIZING ANALYSIS ===
+- Preserve main arguments and conclusions
+- Keep supporting evidence and reasoning
+- Maintain logical connections
+- Include key insights and takeaways
+- Verify analysis quality is preserved
 
 RESPONSE FORMAT REQUIREMENTS:
 
@@ -1380,7 +1619,7 @@ async def component_aggregate(
         component_input, context, "aggregate"
     )
     
-    # Build system prompt optimized for accurate aggregation
+    # Build system prompt optimized for problem-type-aware aggregation
     system_prompt = """You are an AI assistant that aggregates multiple outputs using accurate majority voting and consensus analysis.
 
 CRITICAL QUALITY STANDARDS:
@@ -1414,11 +1653,66 @@ CRITICAL QUALITY STANDARDS:
 7. SAFETY:
    - Ensure aggregated content is appropriate
 
+AGGREGATION STRATEGIES BY PROBLEM TYPE:
+
+=== AGGREGATING MATHEMATICAL ANSWERS ===
+- Compare final numerical answers across outputs
+- Verify calculations: which outputs have correct math?
+- If answers differ, check which calculation is correct
+- Choose the answer with correct mathematical reasoning
+- If multiple correct answers (rounding differences), note this
+- Preserve the most accurate calculation steps
+- Priority: Correct math > Common answer
+
+=== AGGREGATING LOGICAL REASONING ===
+- Compare logical chains across outputs
+- Verify which reasoning is most sound
+- Check if conclusions logically follow from premises
+- Choose the most logically valid reasoning
+- If multiple valid approaches, synthesize the strongest
+- Priority: Logical validity > Common approach
+
+=== AGGREGATING FACTUAL RESPONSES ===
+- Compare facts across outputs
+- Verify accuracy: which facts are correct?
+- If facts conflict, determine which is accurate
+- Choose the most accurate information
+- Combine accurate facts from multiple sources
+- Priority: Accurate facts > Common statement
+
+=== AGGREGATING CODE/PROGRAMMING ===
+- Compare code approaches and implementations
+- Verify which code is correct and functional
+- Check for best practices and efficiency
+- Choose the most correct and well-structured code
+- If multiple correct approaches, synthesize best practices
+- Priority: Correct code > Common approach
+
+=== AGGREGATING CREATIVE/CONTENT ===
+- Compare structure, clarity, and quality
+- Identify best elements from each output
+- Synthesize the strongest combination
+- Maintain consistency in tone and style
+- Priority: Quality content > Common elements
+
+=== AGGREGATING ANALYSIS ===
+- Compare depth and quality of analysis
+- Verify which insights are most accurate
+- Synthesize the strongest reasoning
+- Combine best supporting evidence
+- Priority: Accurate analysis > Common viewpoint
+
+CONSENSUS PRIORITY ORDER:
+1. MOST ACCURATE: If verifiably correct, choose it (even if less common)
+2. MOST COMMON: Among equally accurate, choose the most frequent
+3. BEST REASONED: If accuracy unclear, prefer strongest reasoning
+4. SYNTHESIS: Combine best elements when appropriate
+
 RESPONSE FORMAT REQUIREMENTS:
 
 You MUST respond in valid JSON format with two fields:
 {
-  "immediate_response": "Clear explanation of the consensus, voting results, and how you determined the most accurate answer",
+  "immediate_response": "Clear explanation of the consensus, voting results, problem type identified, and how you determined the most accurate answer",
   "notebook": "The aggregated/consensus notebook content OR 'no update'"
 }
 
@@ -1427,7 +1721,9 @@ Guidelines for notebook field:
 - If there's ONE notebook: Return it as-is (or "no update" if no changes)
 - If there are MULTIPLE notebooks: Create aggregated version using majority voting, choosing the most accurate consensus
 - Use majority voting: Choose the most common AND most accurate content, or merge agreements intelligently
-- Always provide valid JSON"""
+- Always provide valid JSON
+
+IMPORTANT: When aggregating, prioritize accuracy over frequency. A correct answer is always better than a common wrong answer."""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
