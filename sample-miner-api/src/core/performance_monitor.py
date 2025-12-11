@@ -31,6 +31,7 @@ class PerformanceMetric:
     error_type: Optional[str] = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
     finish_reason: Optional[str] = None
+    is_evaluation: bool = False  # Track if this is an evaluation request
 
 
 @dataclass
@@ -134,6 +135,8 @@ class PerformanceMonitor:
         self.total_successful_requests = 0
         self.total_failed_requests = 0
         self.total_tokens = 0
+        # Evaluation-round response time tracking (for minimum response time enforcement)
+        self.evaluation_round_times: deque = deque(maxlen=100)  # Last 100 evaluation response times
     
     def record_metric(self, metric: PerformanceMetric):
         """
@@ -163,6 +166,10 @@ class PerformanceMonitor:
                 self.total_failed_requests += 1
                 if metric.error_type:
                     self.error_counts[metric.error_type] += 1
+            
+            # Track evaluation-round response times separately
+            if metric.is_evaluation and metric.success:
+                self.evaluation_round_times.append(metric.execution_time_ms)
             
             # Add to history
             self.metrics_history.append(metric)
@@ -244,12 +251,41 @@ class PerformanceMonitor:
                 for m in metrics
             ]
     
+    def get_evaluation_round_avg_time_ms(self) -> float:
+        """
+        Get average evaluation-round response time.
+        
+        Returns:
+            Average response time in milliseconds for evaluation rounds.
+            Returns 0.0 if no evaluation data available.
+        """
+        with self.lock:
+            if not self.evaluation_round_times:
+                return 0.0
+            return sum(self.evaluation_round_times) / len(self.evaluation_round_times)
+    
+    def get_minimum_valid_response_time_ms(self) -> float:
+        """
+        Calculate minimum valid response time (1/3 of evaluation-round average).
+        
+        This is used to enforce minimum response time to prevent gaming.
+        
+        Returns:
+            Minimum valid response time in milliseconds (1/3 of evaluation-round average).
+            Returns 0.0 if no evaluation data available.
+        """
+        avg_time = self.get_evaluation_round_avg_time_ms()
+        if avg_time == 0.0:
+            return 0.0
+        return avg_time / 3.0
+    
     def reset_stats(self):
         """Reset all statistics (useful for testing)."""
         with self.lock:
             self.metrics_history.clear()
             self.component_stats.clear()
             self.error_counts.clear()
+            self.evaluation_round_times.clear()
             self.start_time = datetime.utcnow()
             self.total_requests = 0
             self.total_successful_requests = 0
@@ -264,12 +300,13 @@ performance_monitor = PerformanceMonitor()
 class PerformanceTracker:
     """Context manager for tracking component performance."""
     
-    def __init__(self, component: str):
+    def __init__(self, component: str, is_evaluation: bool = False):
         """
         Initialize performance tracker.
         
         Args:
             component: Component name
+            is_evaluation: Whether this is an evaluation request (for response time enforcement)
         """
         self.component = component
         self.start_time: Optional[float] = None
@@ -277,6 +314,7 @@ class PerformanceTracker:
         self.success: bool = True
         self.error_type: Optional[str] = None
         self.finish_reason: Optional[str] = None
+        self.is_evaluation = is_evaluation
     
     def __enter__(self):
         """Start timing."""
@@ -301,6 +339,7 @@ class PerformanceTracker:
             success=self.success,
             error_type=self.error_type,
             finish_reason=self.finish_reason,
+            is_evaluation=self.is_evaluation,
         )
         
         performance_monitor.record_metric(metric)

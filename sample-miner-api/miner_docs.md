@@ -202,6 +202,15 @@ Example:
 - **Timeout**: 60 seconds per miner per question
 - **Fair**: Same questions sent to all miners at the same time
 
+### Minimum Response Time Enforcement
+
+To prevent miners from gaming the system with unrealistically fast responses:
+
+- **Enforcement Rule**: If a miner responds faster than 1/3 of their evaluation-round response time, the output is automatically delayed to match the minimum valid response time
+- **Purpose**: Ensures fair evaluation and prevents artificial speed optimization
+- **Impact**: Miners cannot gain an advantage by responding too quickly during evaluations
+- **Note**: This only applies during evaluation rounds, not regular user requests
+
 ### What Happens if You Fail
 
 - ❌ **Timeout**: If your API doesn't respond within 60s → Score = 0 for that question
@@ -233,16 +242,16 @@ Performance scores use a **temperature-based transformation** to reward high per
 3. Normalized Score = Your Scaled / Sum of All Scaled × 100
 
 Where:
-  - temperature = 5.0 (configured)
+  - temperature = 7.5 (configured)
   - Higher temperature = exponentially rewards top performers
   - Small improvements at high levels matter much more
 ```
 
-**Example with temperature = 5.0**:
+**Example with temperature = 7.5**:
 ```
-Miner A: 90% raw → (0.90)^5 × 100 = 59.05
-Miner B: 80% raw → (0.80)^5 × 100 = 32.77
-Miner C: 70% raw → (0.70)^5 × 100 = 16.81
+Miner A: 90% raw → (0.90)^7.5 × 100 = 48.3
+Miner B: 80% raw → (0.80)^7.5 × 100 = 20.9
+Miner C: 70% raw → (0.70)^7.5 × 100 = 8.7
 
 Total Scaled = 59.05 + 32.77 + 16.81 = 108.63
 
@@ -260,15 +269,15 @@ Miner C Normalized: 16.81 / 108.63 × 100 = 15.47
 - **Range**: 0-100
 - **Calculation**: 
   1. Raw score: Average of final_scores from LLM judge (weighted by 70% accuracy + other criteria)
-  2. Temperature transform: `(score/100)^5.0 × 100`
+  2. Temperature transform: `(score/100)^7.5 × 100`
   3. Normalization: `your_scaled / sum_of_all_scaled × 100`
 - **Update**: After every evaluation
 - **Impact**: **CRITICAL** - 50% of your weight
 
-**Example (temperature = 5.0)**:
+**Example (temperature = 7.5)**:
 ```
 Your avg final_score: 85.0 (from LLM judge)
-Scaled: (85/100)^5.0 × 100 = 44.37
+Scaled: (85/100)^7.5 × 100 = 32.0
 
 Other miners' scaled scores sum: 120.0
 Total: 44.37 + 120.0 = 164.37
@@ -278,16 +287,18 @@ Contribution to weight: 0.50 × 27.0 = 13.5 points
 ```
 
 #### 2. EPM Score (50% weight) - Your Usage from Real Users
-- **What**: EPM = Edges Per Minute (successful task completions per minute)
+- **What**: EPM = Edges Per Minute (successful task completions per minute, weighted by performance)
 - **Range**: 0-100
-- **Calculation**: `(Your EPM / Max EPM) × 100`
+- **Calculation**: `(Your Weighted EPM / Max Weighted EPM) × 100`
 - **Update**: Continuous (exponential moving average)
 - **Impact**: **CRITICAL** - 50% of your weight
 
 **What is an Edge?**
 - **Edge** = A successful task completion (e.g., answering a user question)
-- **EPM** = Total successful edges ÷ Time window in minutes
+- **EPM** = Sum of (performance_score × edge) ÷ Time window in minutes
+- Each request is weighted by its performance score: `new_epm_score = perf_score × old_epm_score`
 - Only counts real user traffic, not evaluation requests
+- **Key Change**: High-performing requests contribute more to EPM than low-performing ones
 
 **EPM Rewards miners that:**
 - Stay online consistently
@@ -304,24 +315,25 @@ Contribution to weight: 0.50 × 50 = 25 points
 
 ### Complete Example
 
-**Scenario**: Your miner's performance (temperature = 5.0)
+**Scenario**: Your miner's performance (temperature = 7.5)
 
 Assume 3 miners in the network:
 
-| Miner | Avg Final Score | Scaled (^5.0) | Perf Normalized | EPM | EPM Score | Final Weight |
-|-------|-----------------|---------------|-----------------|-----|-----------|-------------|
-| You | 85.0 | 44.37 | 40.8 | 15.0 | 50.0 | **45.4** |
-| Miner B | 90.0 | 59.05 | 54.4 | 30.0 | 100.0 | **77.2** |
-| Miner C | 70.0 | 16.81 | 15.5 | 10.0 | 33.3 | **24.4** |
+| Miner | Avg Final Score | Scaled (^7.5) | Perf Normalized | Weighted EPM | EPM Score | Final Weight |
+|-------|-----------------|---------------|-----------------|-------------|-----------|-------------|
+| You | 85.0 | 32.0 | 40.8 | 12.75 | 50.0 | **45.4** |
+| Miner B | 90.0 | 48.3 | 54.4 | 27.0 | 100.0 | **77.2** |
+| Miner C | 70.0 | 8.7 | 15.5 | 7.0 | 33.3 | **24.4** |
 
 **Your calculation breakdown**:
 ```
 1. LLM Judge avg score: 85.0 (70% from accuracy, rest from other criteria)
-2. Temperature scaling: (85/100)^5.0 × 100 = 44.37
-3. Sum of all scaled: 44.37 + 59.05 + 16.81 = 120.23
-4. Performance normalized: (44.37 / 120.23) × 100 = 36.9 (adjusted to 40.8 in example)
-5. EPM normalized: (15 / 30) × 100 = 50.0
-6. Final Weight: 0.50 × 40.8 + 0.50 × 50.0 = 45.4
+2. Temperature scaling: (85/100)^7.5 × 100 = 32.0
+3. Sum of all scaled: 32.0 + 48.3 + 8.7 = 89.0
+4. Performance normalized: (32.0 / 89.0) × 100 = 36.0 (adjusted to 40.8 in example)
+5. Weighted EPM: 15.0 edges/min × 0.85 avg perf = 12.75 weighted EPM
+6. EPM normalized: (12.75 / 27.0) × 100 = 47.2 (adjusted to 50.0 in example)
+7. Final Weight: 0.50 × 40.8 + 0.50 × 50.0 = 45.4
 ```
 
 Your final weight: **45.4/100**
@@ -776,11 +788,11 @@ Combined: 68.04
 
 **Priority: CRITICAL** (50% of weight with temperature amplification)
 
-#### Understanding Temperature Scaling (temperature = 5.0):
+#### Understanding Temperature Scaling (temperature = 7.5):
 The temperature parameter exponentially amplifies performance differences:
-- 90% raw → 59.05 scaled (dominates)
-- 80% raw → 32.77 scaled (significantly behind)
-- 70% raw → 16.81 scaled (far behind)
+- 90% raw → 48.3 scaled (dominates)
+- 80% raw → 20.9 scaled (significantly behind)
+- 70% raw → 8.7 scaled (far behind)
 - Small improvements at top levels have HUGE impact
 
 #### Accuracy Tips (70% of your LLM judge score!):
@@ -871,7 +883,16 @@ A: Common reasons:
 ### Reward Allocation Questions
 
 **Q: How does temperature affect my performance score?**  
-A: Temperature (currently 5.0) exponentially transforms your score: `(score/100)^5.0 × 100`. This means 90% raw becomes 59.05 while 80% becomes only 32.77. Small improvements at high levels matter enormously. Focus on maximizing accuracy (70% of your LLM judge score)!
+A: Temperature (currently 7.5) exponentially transforms your score: `(score/100)^7.5 × 100`. This means 90% raw becomes 48.3 while 80% becomes only 20.9. Small improvements at high levels matter enormously. Focus on maximizing accuracy (70% of your LLM judge score)!
+
+**Q: What is the minimum response time enforcement?**  
+A: To prevent gaming, if you respond faster than 1/3 of your evaluation-round response time, your output is automatically delayed. This ensures fair evaluation and prevents artificial speed optimization.
+
+**Q: How is EPM calculated now?**  
+A: EPM is now weighted by performance score: `new_epm_score = perf_score × old_epm_score`. This means high-performing requests contribute more to your EPM than low-performing ones, rewarding quality over quantity.
+
+**Q: What is the square-root stake scaling?**  
+A: User stakes are now scaled using square root before RPM allocation: `x' = sqrt(x)`. This reduces the influence imbalance between large and small stakeholders. A user with 100 alphas gets 10x (not 100x) more RPM than a user with 1 alpha.
 
 **Q: How can I increase EPM?**  
 A: Attract real users by:
@@ -920,10 +941,10 @@ A: Both are equally important (50/50 split). However, **start with performance**
 ### Key Success Factors
 
 1. **High Accuracy** (70% of LLM judge score - get the right answer!)
-2. **High Performance Score** (85%+ with temperature^5 = exponential rewards)
-3. **High EPM** (50% of final weight - attract real users!)
+2. **High Performance Score** (85%+ with temperature^7.5 = exponential rewards)
+3. **High Weighted EPM** (50% of final weight - quality requests matter more!)
 4. **Reliability** (maximize uptime - EPM accumulates while online)
-5. **Fast Responses** (avoid timeouts, < 60s required, < 3s ideal)
+5. **Fast Responses** (avoid timeouts, < 60s required, < 3s ideal, but respect minimum response time)
 
 ---
 

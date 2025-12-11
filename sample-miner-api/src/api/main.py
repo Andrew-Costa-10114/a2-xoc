@@ -54,6 +54,7 @@ from src.core.conversation import conversation_manager
 from src.core.config import settings
 from src.core.database import create_db_and_tables
 from src.core.performance_monitor import performance_monitor, PerformanceTracker
+import time
 # Import new component handlers
 from src.services.components import (
     component_complete,
@@ -156,6 +157,79 @@ async def timeout_middleware(request: Request, call_next):
             status_code=504,
             content={"detail": "Request timeout after 60 seconds"}
         )
+
+
+def is_evaluation_request(component_input: ComponentInput) -> bool:
+    """
+    Detect if a request is likely an evaluation request.
+    
+    Uses heuristics to identify evaluation requests:
+    - Task contains evaluation keywords
+    - Input contains mathematical problems
+    - CID patterns that suggest evaluation
+    
+    Args:
+        component_input: The component input to check
+        
+    Returns:
+        True if likely an evaluation request, False otherwise
+    """
+    # Check task for evaluation keywords
+    task_lower = component_input.task.lower()
+    eval_keywords = ['evaluate', 'test', 'answer', 'solve', 'calculate', 'math', 'problem']
+    if any(keyword in task_lower for keyword in eval_keywords):
+        # Check if it's a simple math problem (common in evaluations)
+        if any(item.user_query.strip() for item in component_input.input):
+            query_text = " ".join(item.user_query.lower() for item in component_input.input)
+            # Look for mathematical patterns
+            math_patterns = ['=', '+', '-', '*', '/', 'solve', 'calculate', 'what is', 'find']
+            if any(pattern in query_text for pattern in math_patterns):
+                return True
+    
+    # Check CID patterns (evaluations often use specific CID formats)
+    if component_input.cid.startswith('eval_') or 'evaluation' in component_input.cid.lower():
+        return True
+    
+    return False
+
+
+async def enforce_minimum_response_time(
+    execution_time_ms: float,
+    is_evaluation: bool
+) -> float:
+    """
+    Enforce minimum response time to prevent gaming.
+    
+    If a miner responds faster than 1/3 of their evaluation-round response time,
+    delay the output to match the minimum valid response time.
+    
+    Args:
+        execution_time_ms: Actual execution time in milliseconds
+        is_evaluation: Whether this is an evaluation request
+        
+    Returns:
+        Additional delay time in seconds (0 if no delay needed)
+    """
+    if not is_evaluation:
+        return 0.0  # Only enforce for evaluation requests
+    
+    min_valid_time_ms = performance_monitor.get_minimum_valid_response_time_ms()
+    
+    if min_valid_time_ms == 0.0:
+        # No evaluation data yet, don't enforce
+        return 0.0
+    
+    if execution_time_ms < min_valid_time_ms:
+        # Response is too fast, need to delay
+        delay_ms = min_valid_time_ms - execution_time_ms
+        delay_seconds = delay_ms / 1000.0
+        logger.info(
+            f"[Response Time Enforcement] Execution time {execution_time_ms:.2f}ms < "
+            f"minimum {min_valid_time_ms:.2f}ms, delaying by {delay_seconds:.3f}s"
+        )
+        return delay_seconds
+    
+    return 0.0
 
 
 @app.get("/")
@@ -265,10 +339,20 @@ async def complete_component(request: Request, component_input: ComponentInput):
     
     Rate limit: 20 requests per minute per IP address.
     """
-    with PerformanceTracker("complete") as tracker:
+    is_eval = is_evaluation_request(component_input)
+    request_start_time = time.perf_counter()
+    
+    with PerformanceTracker("complete", is_evaluation=is_eval) as tracker:
         try:
             context = conversation_manager.get_or_create(component_input.cid)
             result = await component_complete(component_input, context)
+            
+            # Enforce minimum response time for evaluation requests
+            execution_time_ms = (time.perf_counter() - request_start_time) * 1000.0
+            delay_seconds = await enforce_minimum_response_time(execution_time_ms, is_eval)
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
+            
             return result
         except Exception as e:
             tracker.success = False

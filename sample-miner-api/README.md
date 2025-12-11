@@ -282,10 +282,10 @@ Each criterion is scored 0-100, and the weighted sum gives your final score (0-1
 After all evaluations in a cycle, your raw performance score is calculated:
 
 1. **Raw Score** = Average of all final_scores (failed evaluations = 0)
-2. **Temperature Scaling** = Raw^5.0 × 100 (rewards high performers exponentially)
+2. **Temperature Scaling** = Raw^7.5 × 100 (rewards high performers exponentially)
 3. **Normalization** = Your scaled score ÷ Sum of all miners' scaled scores
 
-The temperature scaling (power of 5) means:
+The temperature scaling (power of 7.5) means:
 - A miner with 90% accuracy vastly outperforms one with 80%
 - Small improvements at the top matter more than the same improvements at lower levels
 
@@ -299,16 +299,18 @@ Final Weight = 50% × Normalized Performance Score + 50% × Normalized EPM
 
 Where EPM (Edges Per Minute) measures your miner's throughput - how many successful task completions (edges) your miner handles per minute from real user traffic. Higher EPM means your miner is actively serving more users.
 
-### Understanding EPM
+### Understanding EPM (Weighted by Performance)
 
 - **Edge** = A successful task completion (e.g., answering a user question)
-- **EPM** = Total successful edges ÷ Time window in minutes
-- **Normalized EPM** = Your EPM ÷ Highest EPM among all miners × 100
+- **EPM** = Sum of (performance_score × edge) ÷ Time window in minutes
+- **Weighted EPM**: Each request is weighted by its performance score: `new_epm_score = perf_score × old_epm_score`
+- **Normalized EPM** = Your Weighted EPM ÷ Highest Weighted EPM among all miners × 100
 
 EPM rewards miners that:
 - Stay online consistently
 - Respond quickly (timeouts don't count as successful edges)
 - Handle real user traffic (not just evaluations)
+- **Provide high-quality responses** (high-performing requests contribute more to EPM)
 
 ### Tips for Better Scores
 
@@ -318,6 +320,8 @@ EPM rewards miners that:
 4. **Maximize Uptime**: EPM accumulates only while your miner is online and serving traffic
 5. **Respond Quickly**: Timeouts don't count as successful edges (hurts both Performance and EPM)
 6. **Handle Edge Cases**: Division by zero, negative numbers, fractions
+7. **Quality Over Quantity**: High-performing requests contribute more to weighted EPM
+8. **Respect Minimum Response Time**: During evaluations, responses faster than 1/3 of your evaluation-round time are automatically delayed
 
 ### Monitoring Your Performance
 
