@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     """Unified wrapper for LLM APIs (OpenAI and vLLM-compatible endpoints)."""
     
+    # Retry configuration constants
+    MAX_RETRIES = 3
+    INITIAL_RETRY_DELAY = 1.0  # seconds
+    MAX_RETRY_DELAY = 30.0  # seconds
+    RETRYABLE_ERRORS = (RateLimitError, APIConnectionError, APITimeoutError)
+    
     def __init__(self):
         """Initialize the LLM client based on configured provider."""
         self.provider = settings.llm_provider.lower()
@@ -281,8 +287,11 @@ class LLMClient:
                 "temperature": temperature if temperature is not None else settings.temperature
             }
             
-            # Make API call
-            response = await self.client.chat.completions.create(**params)
+            # Make API call with retry logic for transient errors
+            response = await self._call_with_retry(
+                lambda: self.client.chat.completions.create(**params),
+                operation_name="complete_text"
+            )
             
             # Extract response data
             message = response.choices[0].message

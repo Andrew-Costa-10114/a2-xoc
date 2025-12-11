@@ -32,6 +32,9 @@ class ConversationRepository:
     
     def get_or_create_conversation(self, cid: str) -> Conversation:
         """Get existing conversation or create new one."""
+        if not cid or not cid.strip():
+            raise ValueError("Conversation ID cannot be empty")
+        
         session = self._get_session()
         try:
             # Try to find existing conversation
@@ -51,8 +54,28 @@ class ConversationRepository:
             if self._owns_session:
                 session.close()
     
+    def _get_or_create_conversation_in_session(self, session: Session, cid: str) -> Conversation:
+        """Get or create conversation within existing session (internal helper to avoid nested sessions)."""
+        if not cid or not cid.strip():
+            raise ValueError("Conversation ID cannot be empty")
+        
+        statement = select(Conversation).where(Conversation.cid == cid)
+        conversation = session.exec(statement).first()
+        
+        if not conversation:
+            conversation = Conversation(cid=cid)
+            session.add(conversation)
+            session.flush()  # Flush to get ID without committing
+            session.refresh(conversation)
+            logger.info(f"Created new conversation: {cid}")
+        
+        return conversation
+    
     def get_conversation(self, cid: str) -> Optional[Conversation]:
         """Get conversation by CID."""
+        if not cid or not cid.strip():
+            return None
+        
         session = self._get_session()
         try:
             statement = select(Conversation).where(Conversation.cid == cid)
@@ -71,32 +94,38 @@ class ConversationRepository:
         """
         Add a message to conversation.
         Automatically manages message limits and cleanup.
+        Uses transaction for atomic operations to prevent race conditions.
         """
+        if not cid or not cid.strip():
+            raise ValueError("Conversation ID cannot be empty")
+        
         session = self._get_session()
         try:
-            # Get or create conversation
-            conversation = self.get_or_create_conversation(cid)
+            # Use transaction for atomic operations (prevents race conditions)
+            with session.begin():
+                # Get or create conversation using the same session (avoid nested sessions)
+                conversation = self._get_or_create_conversation_in_session(session, cid)
+                
+                # Clean up old messages first
+                self._cleanup_old_messages(session, conversation.id)
+                
+                # Enforce max messages limit (within transaction)
+                self._enforce_message_limit(session, conversation.id)
+                
+                # Create new message
+                message = Message(
+                    conversation_id=conversation.id,
+                    role=role,
+                    content=content,
+                    extra_data=extra_data or {}
+                )
+                session.add(message)
+                
+                # Update conversation metadata (recalculate count within transaction)
+                conversation.last_updated = datetime.utcnow()
+                conversation.message_count = self._count_messages(session, conversation.id)
             
-            # Clean up old messages first
-            self._cleanup_old_messages(session, conversation.id)
-            
-            # Enforce max messages limit
-            self._enforce_message_limit(session, conversation.id)
-            
-            # Create new message
-            message = Message(
-                conversation_id=conversation.id,
-                role=role,
-                content=content,
-                extra_data=extra_data or {}
-            )
-            session.add(message)
-            
-            # Update conversation metadata
-            conversation.last_updated = datetime.utcnow()
-            conversation.message_count = self._count_messages(session, conversation.id)
-            
-            session.commit()
+            # Refresh message after transaction commit
             session.refresh(message)
             
             logger.info(
@@ -231,15 +260,18 @@ class ConversationRepository:
             logger.info(f"Cleaned up {result.rowcount} old messages from conversation {conversation_id}")
     
     def _enforce_message_limit(self, session: Session, conversation_id: int):
-        """Enforce MAX_MESSAGES limit by deleting oldest messages."""
-        # Count current messages
+        """Enforce MAX_MESSAGES limit by deleting oldest messages.
+        
+        Note: This should be called within a transaction to prevent race conditions.
+        """
+        # Count current messages (within transaction)
         count_statement = select(func.count()).select_from(Message).where(
             Message.conversation_id == conversation_id
         )
         count = session.exec(count_statement).one()
         
         if count >= self.MAX_MESSAGES:
-            # Get IDs of messages to delete (keep most recent MAX_MESSAGES-1)
+            # Get IDs of messages to keep (keep most recent MAX_MESSAGES-1)
             messages_to_keep = (
                 select(Message.id)
                 .where(Message.conversation_id == conversation_id)
@@ -254,7 +286,7 @@ class ConversationRepository:
             
             result = session.exec(delete_statement)
             if result.rowcount > 0:
-                session.commit()
+                # Don't commit here - let the transaction handle it
                 logger.info(f"Removed {result.rowcount} old messages to maintain limit")
     
     def _count_messages(self, session: Session, conversation_id: int) -> int:

@@ -614,8 +614,8 @@ async def get_conversation_history(request: Request, cid: str):
             "cid": cid,
             "message_count": len(messages),
             "messages": messages,
-            "created_at": context.created_at.isoformat() if hasattr(context, 'created_at') else None,
-            "last_activity": context.last_activity.isoformat() if hasattr(context, 'last_activity') else None
+            "created_at": context.created_at.isoformat() if context.created_at else None,
+            "last_activity": context.last_updated.isoformat() if context.last_updated else None
         }
     except Exception as e:
         logger.error(f"Error retrieving conversation {cid}: {str(e)}", exc_info=True)

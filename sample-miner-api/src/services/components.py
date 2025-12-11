@@ -269,6 +269,54 @@ def _is_likely_evaluation_request(component_input: ComponentInput) -> bool:
     return False
 
 
+def resolve_notebook_output(
+    notebook_output: str,
+    component_input: ComponentInput,
+    component_name: str
+) -> str:
+    """
+    Resolve "no update" notebook output by checking previous outputs.
+    
+    This helper function extracts the duplicated logic for resolving "no update"
+    notebook outputs across multiple components.
+    
+    Args:
+        notebook_output: Current notebook output (may be "no update")
+        component_input: Component input with previous outputs
+        component_name: Name of component (for logging)
+        
+    Returns:
+        Resolved notebook output (previous notebook or "no update")
+    """
+    if notebook_output == "no update" and component_input.previous_outputs:
+        for prev in component_input.previous_outputs:
+            if prev.output.notebook and prev.output.notebook != "no update":
+                logger.info(f"[{component_name}] Resolved 'no update' to previous notebook from [{prev.component}]")
+                return prev.output.notebook
+    
+    return notebook_output
+
+
+def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
+    """
+    Truncate text to max length with suffix.
+    
+    This helper function extracts the duplicated truncation logic used across
+    multiple components.
+    
+    Args:
+        text: Text to truncate
+        max_length: Maximum length
+        suffix: Suffix to add if truncated
+        
+    Returns:
+        Truncated text
+    """
+    if len(text) <= max_length:
+        return text
+    return text[:max_length - len(suffix)] + suffix
+
+
 def get_playbook_service() -> PlaybookService:
     """Get or create playbook service instance."""
     global _playbook_service
@@ -901,17 +949,7 @@ RESPONSE REQUIREMENTS:
                 logger.warning("[complete] Response contains uncertainty indicators - may impact accuracy score")
         
         # Resolve "no update" for notebook - return previous notebook if exists
-        if notebook_output == "no update" and component_input.previous_outputs:
-            resolved = False
-            for prev in component_input.previous_outputs:
-                if prev.output.notebook and prev.output.notebook != "no update":
-                    notebook_output = prev.output.notebook
-                    logger.info(f"[complete] Resolved 'no update' to previous notebook from [{prev.component}]")
-                    resolved = True
-                    break
-            
-            if not resolved:
-                logger.info(f"[complete] No previous notebook found to resolve - keeping 'no update'")
+        notebook_output = resolve_notebook_output(notebook_output, component_input, "complete")
         
         # Store in conversation history (with error handling)
         try:
@@ -1200,17 +1238,7 @@ RESPONSE REQUIREMENTS:
     immediate_response, notebook_output = parse_json_response(response, "refine", fallback_response=response)
     
     # Resolve "no update" for notebook - return previous notebook if exists
-    if notebook_output == "no update" and component_input.previous_outputs:
-        resolved = False
-        for prev in component_input.previous_outputs:
-            if prev.output.notebook and prev.output.notebook != "no update":
-                notebook_output = prev.output.notebook
-                logger.info(f"[refine] Resolved 'no update' to previous notebook from [{prev.component}]")
-                resolved = True
-                break
-        
-        if not resolved:
-            logger.info(f"[refine] No previous notebook found to resolve - keeping 'no update'")
+    notebook_output = resolve_notebook_output(notebook_output, component_input, "refine")
     
     # Store in conversation history
     context.add_user_message(f"Refine task: {component_input.task}")
@@ -2069,17 +2097,7 @@ RESPONSE REQUIREMENTS:
     immediate_response, notebook_output = parse_json_response(response, "summary", fallback_response=response)
     
     # Resolve "no update" for notebook - return previous notebook if exists
-    if notebook_output == "no update" and component_input.previous_outputs:
-        resolved = False
-        for prev in component_input.previous_outputs:
-            if prev.output.notebook and prev.output.notebook != "no update":
-                notebook_output = prev.output.notebook
-                logger.info(f"[summary] Resolved 'no update' to previous notebook from [{prev.component}]")
-                resolved = True
-                break
-        
-        if not resolved:
-            logger.info(f"[summary] No previous notebook found to resolve - keeping 'no update'")
+    notebook_output = resolve_notebook_output(notebook_output, component_input, "summary")
     
     # Store in conversation history
     context.add_user_message(f"Summarize: {component_input.task}")
@@ -2372,17 +2390,7 @@ RESPONSE REQUIREMENTS:
     immediate_response, notebook_output = parse_json_response(response, "aggregate", fallback_response=response)
     
     # Resolve "no update" for notebook - return previous notebook if exists
-    if notebook_output == "no update" and component_input.previous_outputs:
-        resolved = False
-        for prev in component_input.previous_outputs:
-            if prev.output.notebook and prev.output.notebook != "no update":
-                notebook_output = prev.output.notebook
-                logger.info(f"[aggregate] Resolved 'no update' to previous notebook from [{prev.component}]")
-                resolved = True
-                break
-        
-        if not resolved:
-            logger.info(f"[aggregate] No previous notebook found to resolve - keeping 'no update'")
+    notebook_output = resolve_notebook_output(notebook_output, component_input, "aggregate")
     
     # Store in conversation history
     context.add_user_message(f"Aggregate: {component_input.task}")
