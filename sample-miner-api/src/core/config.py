@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     connection_pool_keepalive_expiry: int = 30
     request_timeout: int = 60
     
+    # Response Time Enforcement Settings
+    enable_response_time_enforcement: bool = True  # Enable minimum response time enforcement for evaluations
+    min_evaluation_samples: int = 5  # Minimum evaluation samples before enforcing (prevents false positives)
+    
     # Miner Configuration
     miner_name: str = "sample-miner"
     

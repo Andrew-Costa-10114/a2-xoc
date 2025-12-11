@@ -136,7 +136,13 @@ class PerformanceMonitor:
         self.total_failed_requests = 0
         self.total_tokens = 0
         # Evaluation-round response time tracking (for minimum response time enforcement)
-        self.evaluation_round_times: deque = deque(maxlen=100)  # Last 100 evaluation response times
+        self._evaluation_round_times: deque = deque(maxlen=100)  # Last 100 evaluation response times
+    
+    @property
+    def evaluation_round_times(self) -> deque:
+        """Get evaluation round times deque (thread-safe access)."""
+        with self.lock:
+            return self._evaluation_round_times
     
     def record_metric(self, metric: PerformanceMetric):
         """
@@ -169,7 +175,7 @@ class PerformanceMonitor:
             
             # Track evaluation-round response times separately
             if metric.is_evaluation and metric.success:
-                self.evaluation_round_times.append(metric.execution_time_ms)
+                self._evaluation_round_times.append(metric.execution_time_ms)
             
             # Add to history
             self.metrics_history.append(metric)
@@ -260,9 +266,9 @@ class PerformanceMonitor:
             Returns 0.0 if no evaluation data available.
         """
         with self.lock:
-            if not self.evaluation_round_times:
+            if not self._evaluation_round_times:
                 return 0.0
-            return sum(self.evaluation_round_times) / len(self.evaluation_round_times)
+            return sum(self._evaluation_round_times) / len(self._evaluation_round_times)
     
     def get_minimum_valid_response_time_ms(self) -> float:
         """
@@ -285,7 +291,7 @@ class PerformanceMonitor:
             self.metrics_history.clear()
             self.component_stats.clear()
             self.error_counts.clear()
-            self.evaluation_round_times.clear()
+            self._evaluation_round_times.clear()
             self.start_time = datetime.utcnow()
             self.total_requests = 0
             self.total_successful_requests = 0

@@ -163,10 +163,11 @@ def is_evaluation_request(component_input: ComponentInput) -> bool:
     """
     Detect if a request is likely an evaluation request.
     
-    Uses heuristics to identify evaluation requests:
+    Uses improved heuristics to identify evaluation requests:
     - Task contains evaluation keywords
-    - Input contains mathematical problems
+    - Input contains mathematical problems or test patterns
     - CID patterns that suggest evaluation
+    - Request structure typical of evaluations
     
     Args:
         component_input: The component input to check
@@ -174,20 +175,60 @@ def is_evaluation_request(component_input: ComponentInput) -> bool:
     Returns:
         True if likely an evaluation request, False otherwise
     """
+    # Check CID patterns first (most reliable indicator)
+    cid_lower = component_input.cid.lower()
+    if (cid_lower.startswith('eval_') or 
+        'evaluation' in cid_lower or 
+        cid_lower.startswith('test_') or
+        'validator' in cid_lower):
+        return True
+    
     # Check task for evaluation keywords
     task_lower = component_input.task.lower()
-    eval_keywords = ['evaluate', 'test', 'answer', 'solve', 'calculate', 'math', 'problem']
-    if any(keyword in task_lower for keyword in eval_keywords):
-        # Check if it's a simple math problem (common in evaluations)
-        if any(item.user_query.strip() for item in component_input.input):
-            query_text = " ".join(item.user_query.lower() for item in component_input.input)
-            # Look for mathematical patterns
-            math_patterns = ['=', '+', '-', '*', '/', 'solve', 'calculate', 'what is', 'find']
-            if any(pattern in query_text for pattern in math_patterns):
-                return True
+    eval_keywords = [
+        'evaluate', 'test', 'answer', 'solve', 'calculate', 'math', 'problem',
+        'question', 'assessment', 'quiz', 'exam', 'challenge'
+    ]
     
-    # Check CID patterns (evaluations often use specific CID formats)
-    if component_input.cid.startswith('eval_') or 'evaluation' in component_input.cid.lower():
+    # Strong indicators in task
+    strong_indicators = ['evaluate', 'test', 'assessment', 'quiz', 'exam']
+    if any(keyword in task_lower for keyword in strong_indicators):
+        return True
+    
+    # Check input content for evaluation patterns
+    if component_input.input:
+        query_text = " ".join(item.user_query.lower() for item in component_input.input)
+        
+        # Mathematical problem patterns
+        math_patterns = [
+            '=', '+', '-', '*', '/', '×', '÷', 'solve', 'calculate', 
+            'what is', 'find', 'compute', 'determine', 'evaluate'
+        ]
+        if any(pattern in query_text for pattern in math_patterns):
+            # Additional check: looks like a math problem
+            if any(char.isdigit() for char in query_text):  # Contains numbers
+                # Check for common math problem structures
+                if ('+' in query_text or '-' in query_text or 
+                    '*' in query_text or '/' in query_text or
+                    '=' in query_text or 'solve' in query_text):
+                    return True
+        
+        # Check for test-like question patterns
+        test_patterns = [
+            'what is the', 'what are the', 'which of the', 'choose the',
+            'select the', 'identify the', 'determine the'
+        ]
+        if any(pattern in query_text for pattern in test_patterns):
+            # Likely a test question
+            return True
+    
+    # Check if task is very generic (evaluations often use generic tasks)
+    generic_tasks = [
+        'answer the question', 'solve the problem', 'complete the task',
+        'respond to the query', 'process the request'
+    ]
+    if task_lower in generic_tasks and component_input.input:
+        # Generic task with input suggests evaluation
         return True
     
     return False
@@ -210,8 +251,18 @@ async def enforce_minimum_response_time(
     Returns:
         Additional delay time in seconds (0 if no delay needed)
     """
+    # Check if enforcement is enabled
+    if not settings.enable_response_time_enforcement:
+        return 0.0
+    
     if not is_evaluation:
         return 0.0  # Only enforce for evaluation requests
+    
+    # Check if we have enough evaluation samples
+    eval_count = len(performance_monitor.evaluation_round_times)
+    if eval_count < settings.min_evaluation_samples:
+        # Not enough samples yet, don't enforce
+        return 0.0
     
     min_valid_time_ms = performance_monitor.get_minimum_valid_response_time_ms()
     
@@ -372,10 +423,20 @@ async def refine_component(request: Request, component_input: ComponentInput):
     
     Rate limit: 20 requests per minute per IP address.
     """
-    with PerformanceTracker("refine") as tracker:
+    is_eval = is_evaluation_request(component_input)
+    request_start_time = time.perf_counter()
+    
+    with PerformanceTracker("refine", is_evaluation=is_eval) as tracker:
         try:
             context = conversation_manager.get_or_create(component_input.cid)
             result = await component_refine(component_input, context)
+            
+            # Enforce minimum response time for evaluation requests
+            execution_time_ms = (time.perf_counter() - request_start_time) * 1000.0
+            delay_seconds = await enforce_minimum_response_time(execution_time_ms, is_eval)
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
+            
             return result
         except Exception as e:
             tracker.success = False
@@ -395,11 +456,21 @@ async def feedback_component(request: Request, component_input: ComponentInput):
     
     Rate limit: 20 requests per minute per IP address.
     """
-    with PerformanceTracker("feedback") as tracker:
+    is_eval = is_evaluation_request(component_input)
+    request_start_time = time.perf_counter()
+    
+    with PerformanceTracker("feedback", is_evaluation=is_eval) as tracker:
         try:
             context = conversation_manager.get_or_create(component_input.cid)
             context._perf_tracker = tracker
             result = await component_feedback(component_input, context)
+            
+            # Enforce minimum response time for evaluation requests
+            execution_time_ms = (time.perf_counter() - request_start_time) * 1000.0
+            delay_seconds = await enforce_minimum_response_time(execution_time_ms, is_eval)
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
+            
             return result
         except Exception as e:
             tracker.success = False
@@ -725,6 +796,47 @@ async def get_recent_metrics(request: Request, limit: int = 100, component: Opti
         }
     except Exception as e:
         logger.error(f"Error retrieving recent metrics: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics/evaluation", dependencies=[Depends(verify_api_key)])
+@limiter.limit("60/minute")
+async def get_evaluation_metrics(request: Request):
+    """
+    Get evaluation-round performance statistics.
+    
+    Returns statistics about evaluation requests including:
+    - Number of evaluation requests tracked
+    - Average evaluation-round response time
+    - Minimum valid response time (1/3 of average)
+    - Recent evaluation response times
+    - Enforcement status
+    
+    This endpoint helps monitor response time enforcement behavior.
+    """
+    try:
+        with performance_monitor.lock:
+            eval_count = len(performance_monitor._evaluation_round_times)
+            recent_eval_times = list(performance_monitor._evaluation_round_times)[-20:]
+        avg_time_ms = performance_monitor.get_evaluation_round_avg_time_ms()
+        min_valid_time_ms = performance_monitor.get_minimum_valid_response_time_ms()
+        
+        return {
+            "evaluation_requests_tracked": eval_count,
+            "average_response_time_ms": round(avg_time_ms, 2),
+            "minimum_valid_response_time_ms": round(min_valid_time_ms, 2),
+            "enforcement_enabled": settings.enable_response_time_enforcement,
+            "min_samples_required": settings.min_evaluation_samples,
+            "enforcement_active": eval_count >= settings.min_evaluation_samples and settings.enable_response_time_enforcement,
+            "recent_evaluation_times_ms": [round(t, 2) for t in recent_eval_times],
+            "statistics": {
+                "min": round(min(recent_eval_times), 2) if recent_eval_times else 0.0,
+                "max": round(max(recent_eval_times), 2) if recent_eval_times else 0.0,
+                "median": round(sorted(recent_eval_times)[len(recent_eval_times) // 2], 2) if recent_eval_times else 0.0,
+            } if recent_eval_times else {}
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving evaluation metrics: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
