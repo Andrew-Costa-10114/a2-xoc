@@ -25,8 +25,24 @@ from src.models.models import (
 from src.services.llm_client import generate_response, get_llm_client
 from src.core.conversation import ConversationContext
 from src.services.playbook_service import PlaybookService
+from src.core.performance_monitor import performance_monitor
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_token_usage_from_response(response, context: ConversationContext):
+    """Extract token usage from LLM response and update performance tracker."""
+    if isinstance(response, dict):
+        tokens_used = response.get("tokens_used", 0)
+        finish_reason = response.get("finish_reason")
+        # Update performance tracker if available
+        current_tracker = getattr(context, '_perf_tracker', None)
+        if current_tracker:
+            current_tracker.set_tokens(tokens_used)
+            if finish_reason:
+                current_tracker.set_finish_reason(finish_reason)
+        return response.get("response", "")
+    return response
 
 # Initialize playbook service (will be set up when first used)
 _playbook_service = None
@@ -1382,7 +1398,7 @@ RESPONSE REQUIREMENTS:
 - VERIFY your feedback is accurate before finalizing"""
     
     # Generate feedback (optimized for quality + speed)
-    response = await generate_response(
+    llm_response = await generate_response(
         prompt=feedback_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
@@ -1390,6 +1406,8 @@ RESPONSE REQUIREMENTS:
         max_tokens=2500,  # Increased for comprehensive, detailed feedback
         response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
+    # Extract token usage and update performance tracker
+    response = _extract_token_usage_from_response(llm_response, context)
     
     # Store in conversation history
     context.add_user_message(f"Feedback request: {component_input.task}")
@@ -1953,7 +1971,7 @@ RESPONSE REQUIREMENTS:
 - Ensure completeness: All key points must be included"""
     
     # Generate summary (optimized for quality + speed)
-    response = await generate_response(
+    llm_response = await generate_response(
         prompt=summary_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
@@ -1961,6 +1979,8 @@ RESPONSE REQUIREMENTS:
         max_tokens=3500,  # Increased for comprehensive summaries that preserve all key information
         response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
+    # Extract token usage and update performance tracker
+    response = _extract_token_usage_from_response(llm_response, context)
     
     # Parse JSON response using robust parsing function
     immediate_response, notebook_output = parse_json_response(response, "summary", fallback_response=response)
@@ -2251,7 +2271,7 @@ RESPONSE REQUIREMENTS:
 - Be transparent: Show your reasoning for the consensus choice"""
     
     # Generate aggregate result (optimized for quality + speed)
-    response = await generate_response(
+    llm_response = await generate_response(
         prompt=aggregate_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
@@ -2259,6 +2279,8 @@ RESPONSE REQUIREMENTS:
         max_tokens=3500,  # Increased for detailed consensus building and voting explanations
         response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
+    # Extract token usage and update performance tracker
+    response = _extract_token_usage_from_response(llm_response, context)
     
     # Parse JSON response using robust parsing function
     immediate_response, notebook_output = parse_json_response(response, "aggregate", fallback_response=response)

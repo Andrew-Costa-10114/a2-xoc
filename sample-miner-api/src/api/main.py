@@ -53,6 +53,7 @@ from src.services.llm_client import generate_response, complete_text
 from src.core.conversation import conversation_manager
 from src.core.config import settings
 from src.core.database import create_db_and_tables
+from src.core.performance_monitor import performance_monitor, PerformanceTracker
 # Import new component handlers
 from src.services.components import (
     component_complete,
@@ -264,12 +265,16 @@ async def complete_component(request: Request, component_input: ComponentInput):
     
     Rate limit: 20 requests per minute per IP address.
     """
-    try:
-        context = conversation_manager.get_or_create(component_input.cid)
-        return await component_complete(component_input, context)
-    except Exception as e:
-        logger.error(f"Error in complete: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    with PerformanceTracker("complete") as tracker:
+        try:
+            context = conversation_manager.get_or_create(component_input.cid)
+            result = await component_complete(component_input, context)
+            return result
+        except Exception as e:
+            tracker.success = False
+            tracker.error_type = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Error in complete: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/refine", response_model=ComponentOutput, dependencies=[Depends(verify_api_key)])
@@ -283,12 +288,16 @@ async def refine_component(request: Request, component_input: ComponentInput):
     
     Rate limit: 20 requests per minute per IP address.
     """
-    try:
-        context = conversation_manager.get_or_create(component_input.cid)
-        return await component_refine(component_input, context)
-    except Exception as e:
-        logger.error(f"Error in refine: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    with PerformanceTracker("refine") as tracker:
+        try:
+            context = conversation_manager.get_or_create(component_input.cid)
+            result = await component_refine(component_input, context)
+            return result
+        except Exception as e:
+            tracker.success = False
+            tracker.error_type = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Error in refine: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/feedback", response_model=ComponentOutput, dependencies=[Depends(verify_api_key)])
@@ -302,12 +311,17 @@ async def feedback_component(request: Request, component_input: ComponentInput):
     
     Rate limit: 20 requests per minute per IP address.
     """
-    try:
-        context = conversation_manager.get_or_create(component_input.cid)
-        return await component_feedback(component_input, context)
-    except Exception as e:
-        logger.error(f"Error in feedback: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    with PerformanceTracker("feedback") as tracker:
+        try:
+            context = conversation_manager.get_or_create(component_input.cid)
+            context._perf_tracker = tracker
+            result = await component_feedback(component_input, context)
+            return result
+        except Exception as e:
+            tracker.success = False
+            tracker.error_type = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Error in feedback: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/human_feedback", response_model=ComponentOutput, dependencies=[Depends(verify_api_key)])
@@ -339,15 +353,19 @@ async def internet_search_component(request: Request, component_input: Component
     (free, no API key required). It returns up to 10 results per query with titles,
     URLs, and descriptions formatted as structured text.
     
-    The implementation uses the duckduckgo-search library. If the library is not
-    installed, the endpoint will return an error message with installation instructions.
+    Rate limit: 10 requests per minute per IP address.
     """
-    try:
-        context = conversation_manager.get_or_create(component_input.cid)
-        return await component_internet_search(component_input, context)
-    except Exception as e:
-        logger.error(f"Error in internet_search: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    with PerformanceTracker("internet_search") as tracker:
+        try:
+            context = conversation_manager.get_or_create(component_input.cid)
+            context._perf_tracker = tracker
+            result = await component_internet_search(component_input, context)
+            return result
+        except Exception as e:
+            tracker.success = False
+            tracker.error_type = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Error in internet_search: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/summary", response_model=ComponentOutput, dependencies=[Depends(verify_api_key)])
@@ -359,12 +377,17 @@ async def summary_component(request: Request, component_input: ComponentInput):
     Takes multiple previous outputs (from previous_outputs field) and creates
     a concise, comprehensive summary that captures main points and key insights.
     """
-    try:
-        context = conversation_manager.get_or_create(component_input.cid)
-        return await component_summary(component_input, context)
-    except Exception as e:
-        logger.error(f"Error in summary: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    with PerformanceTracker("summary") as tracker:
+        try:
+            context = conversation_manager.get_or_create(component_input.cid)
+            context._perf_tracker = tracker
+            result = await component_summary(component_input, context)
+            return result
+        except Exception as e:
+            tracker.success = False
+            tracker.error_type = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Error in summary: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/aggregate", response_model=ComponentOutput, dependencies=[Depends(verify_api_key)])
@@ -376,12 +399,17 @@ async def aggregate_component(request: Request, component_input: ComponentInput)
     Analyzes multiple previous outputs (from previous_outputs field) and
     determines the consensus answer through majority voting logic.
     """
-    try:
-        context = conversation_manager.get_or_create(component_input.cid)
-        return await component_aggregate(component_input, context)
-    except Exception as e:
-        logger.error(f"Error in aggregate: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    with PerformanceTracker("aggregate") as tracker:
+        try:
+            context = conversation_manager.get_or_create(component_input.cid)
+            context._perf_tracker = tracker
+            result = await component_aggregate(component_input, context)
+            return result
+        except Exception as e:
+            tracker.success = False
+            tracker.error_type = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Error in aggregate: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/conversations", dependencies=[Depends(verify_api_key)])
@@ -544,6 +572,75 @@ async def get_playbook_context(request: Request, cid: str):
         }
     except Exception as e:
         logger.error(f"Error retrieving playbook context for {cid}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Performance Metrics Endpoints
+# ============================================================================
+
+@app.get("/metrics", dependencies=[Depends(verify_api_key)])
+@limiter.limit("60/minute")
+async def get_metrics(request: Request):
+    """
+    Get overall performance metrics.
+    
+    Returns comprehensive performance statistics including:
+    - Overall stats (uptime, requests, success rate, tokens)
+    - Component-specific statistics
+    - Error counts
+    - Throughput metrics
+    """
+    try:
+        return performance_monitor.get_overall_stats()
+    except Exception as e:
+        logger.error(f"Error retrieving metrics: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics/components", dependencies=[Depends(verify_api_key)])
+@limiter.limit("60/minute")
+async def get_component_metrics(request: Request, component: Optional[str] = None):
+    """
+    Get component-specific performance metrics.
+    
+    Args:
+        component: Optional component name to filter by (returns all if not specified)
+    
+    Returns component statistics including:
+    - Request counts (total, successful, failed)
+    - Success rate
+    - Execution time statistics (avg, min, max, p50, p95, p99)
+    - Token usage statistics
+    """
+    try:
+        return performance_monitor.get_component_stats(component)
+    except Exception as e:
+        logger.error(f"Error retrieving component metrics: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics/recent", dependencies=[Depends(verify_api_key)])
+@limiter.limit("60/minute")
+async def get_recent_metrics(request: Request, limit: int = 100, component: Optional[str] = None):
+    """
+    Get recent performance metrics.
+    
+    Args:
+        limit: Maximum number of recent metrics to return (default: 100, max: 1000)
+        component: Optional component name to filter by
+    
+    Returns list of recent metrics with execution times, tokens, success status, etc.
+    """
+    try:
+        limit = min(max(1, limit), 1000)  # Clamp between 1 and 1000
+        return {
+            "limit": limit,
+            "component_filter": component,
+            "metrics": performance_monitor.get_recent_metrics(limit=limit, component=component)
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving recent metrics: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
