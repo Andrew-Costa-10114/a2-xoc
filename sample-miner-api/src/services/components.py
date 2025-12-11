@@ -787,14 +787,14 @@ RESPONSE REQUIREMENTS:
 - For math problems, format like: "Step 1: [reasoning] → Step 2: [reasoning] → Final Answer: [answer]"
 - Your response must be accurate, complete, relevant, and clearly formatted"""
     
-    # Generate response with optional conversation history (optimized for speed + accuracy)
+    # Generate response with optional conversation history (optimized for quality + speed)
     response = await generate_response(
         prompt=task_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
         temperature=0.2,  # Lower temperature for more deterministic, accurate answers
-        max_tokens=2000,  # Optimized limit: enough for quality, fast generation
-        response_format={"type": "json_object"}  # JSON mode for faster parsing
+        max_tokens=4000,  # Increased for comprehensive responses (step-by-step reasoning needs more tokens)
+        response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
     
     # Parse JSON response using robust parsing function
@@ -1052,14 +1052,14 @@ RESPONSE REQUIREMENTS:
 - notebook: The refined, improved, and ACCURATE version of the content (or "no update" if no improvements needed)
 - Ensure all improvements are verified for correctness"""
     
-    # Generate response (optimized for speed + accuracy)
+    # Generate response (optimized for quality + speed)
     response = await generate_response(
         prompt=refine_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
         temperature=0.3,  # Lower temperature for more accurate refinements
-        max_tokens=2000,  # Optimized limit for refinements
-        response_format={"type": "json_object"}  # JSON mode for faster parsing
+        max_tokens=3500,  # Increased for detailed refinements and improvements
+        response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
     
     # Parse JSON response using robust parsing function
@@ -1336,14 +1336,14 @@ RESPONSE REQUIREMENTS:
 - Use clear headings and structure for readability
 - VERIFY your feedback is accurate before finalizing"""
     
-    # Generate feedback (optimized for speed + accuracy)
+    # Generate feedback (optimized for quality + speed)
     response = await generate_response(
         prompt=feedback_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
         temperature=0.4,  # Lower temperature for more accurate, focused feedback
-        max_tokens=1500,  # Feedback typically shorter, faster generation
-        response_format={"type": "json_object"}  # JSON mode for faster parsing
+        max_tokens=2500,  # Increased for comprehensive, detailed feedback
+        response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
     
     # Store in conversation history
@@ -1907,14 +1907,14 @@ RESPONSE REQUIREMENTS:
 - Prioritize accuracy: Every fact and number must be correct
 - Ensure completeness: All key points must be included"""
     
-    # Generate summary (optimized for speed + accuracy)
+    # Generate summary (optimized for quality + speed)
     response = await generate_response(
         prompt=summary_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
         temperature=0.4,  # Slightly lower for more accurate summaries
-        max_tokens=2000,  # Optimized limit for summaries
-        response_format={"type": "json_object"}  # JSON mode for faster parsing
+        max_tokens=3500,  # Increased for comprehensive summaries that preserve all key information
+        response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
     
     # Parse JSON response using robust parsing function
@@ -2205,14 +2205,14 @@ RESPONSE REQUIREMENTS:
 - Prioritize accuracy: The correct answer is more important than the most common answer
 - Be transparent: Show your reasoning for the consensus choice"""
     
-    # Generate aggregate result (optimized for speed + accuracy)
+    # Generate aggregate result (optimized for quality + speed)
     response = await generate_response(
         prompt=aggregate_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
         temperature=0.2,  # Very low temperature for accurate, deterministic consensus
-        max_tokens=2000,  # Optimized limit for aggregation
-        response_format={"type": "json_object"}  # JSON mode for faster parsing
+        max_tokens=3500,  # Increased for detailed consensus building and voting explanations
+        response_format={"type": "json_object"}  # JSON mode for faster parsing (offsets token increase)
     )
     
     # Parse JSON response using robust parsing function
