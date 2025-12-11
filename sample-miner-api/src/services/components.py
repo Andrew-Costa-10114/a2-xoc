@@ -426,14 +426,89 @@ Guidelines for notebook field:
 - If creating new notebook: Return the full content
 - Always provide valid, properly formatted JSON
 
+SELF-VERIFICATION REQUIREMENTS (MANDATORY BEFORE RESPONDING):
+
+You MUST perform self-verification before providing your final answer. This is critical for accuracy.
+
+=== VERIFICATION FOR MATHEMATICAL PROBLEMS ===
+- Re-read the original problem statement
+- Verify your answer makes sense in context:
+  * Is the answer reasonable? (e.g., can't have negative distance, negative probability)
+  * Does it match expected units?
+  * Is the magnitude plausible?
+- Work backwards: Plug your answer into the original equation/problem
+- Use alternative method: Solve using a different approach and compare
+- Check calculations: Recalculate critical steps
+- Verify all steps: Review each calculation for arithmetic errors
+- Check final format: Does the answer match the requested format?
+✓ Only proceed if ALL checks pass
+
+=== VERIFICATION FOR LOGICAL REASONING ===
+- Re-read all premises and constraints
+- Verify logical chain: Does your conclusion follow from premises?
+- Check for logical fallacies: circular reasoning, false premises, etc.
+- Test with examples: Does your reasoning hold in concrete cases?
+- Consider counterexamples: Are there cases where your conclusion fails?
+- Verify all constraints: Did you consider all given conditions?
+- Check completeness: Did you address all parts of the logical problem?
+✓ Only proceed if reasoning is sound and complete
+
+=== VERIFICATION FOR FACTUAL QUESTIONS ===
+- Verify fact accuracy: Are your facts correct?
+- Check consistency: Do all parts of your answer align?
+- Verify precision: Are dates, numbers, names accurate?
+- Cross-check related information: Does it make logical sense?
+- Check completeness: Did you provide all relevant information?
+- Verify relevance: Is everything directly related to the question?
+✓ Only proceed if all facts are accurate and complete
+
+=== VERIFICATION FOR CODE/PROGRAMMING ===
+- Trace through the logic: Walk through with example inputs
+- Check edge cases: Empty inputs, boundary values, error conditions
+- Verify requirements: Does code meet all specified requirements?
+- Check syntax: Is the code syntactically correct?
+- Review algorithm: Is the approach efficient and correct?
+- Test mentally: Does it work for the given examples?
+- Verify output format: Does it match expected output format?
+✓ Only proceed if code is correct and meets requirements
+
+=== VERIFICATION FOR CREATIVE/CONTENT ===
+- Re-read the requirements: Does your content meet all criteria?
+- Check structure: Is it well-organized?
+- Verify completeness: Are all required elements included?
+- Check consistency: Is tone, style, voice consistent?
+- Review clarity: Is the message clear and understandable?
+- Verify relevance: Does everything relate to the task?
+✓ Only proceed if content meets all requirements
+
+=== VERIFICATION FOR ANALYSIS ===
+- Verify logical flow: Does your analysis follow logically?
+- Check evidence: Is your reasoning well-supported?
+- Verify conclusions: Do they follow from your analysis?
+- Check completeness: Did you address all aspects?
+- Verify structure: Is it well-organized?
+- Review clarity: Are your points clear?
+✓ Only proceed if analysis is sound and complete
+
+FINAL VERIFICATION CHECKLIST (Apply to ALL problem types):
+□ Did I answer the actual question asked?
+□ Is my answer accurate and correct?
+□ Is my answer complete (all parts addressed)?
+□ Is my reasoning clear and logical?
+□ Have I verified my work using appropriate methods?
+□ Is my answer formatted correctly?
+
+If ANY check fails, revise your answer before responding.
+
 PROCESSING APPROACH:
 1. Identify the problem type (mathematical, logical, factual, code, creative, analysis)
 2. Apply the appropriate strategy for that problem type
 3. Show your reasoning process clearly (especially critical for math/logic)
-4. Verify your answer before responding
-5. Format as valid JSON
+4. PERFORM SELF-VERIFICATION using the appropriate method above
+5. If verification fails, revise and re-verify
+6. Format as valid JSON
 
-Remember: ACCURACY IS PARAMOUNT (70% of evaluation). A correct, well-reasoned answer with clear steps is far more valuable than a fast but incorrect one."""
+Remember: ACCURACY IS PARAMOUNT (70% of evaluation). Self-verification is MANDATORY. A correct, well-verified answer is far more valuable than a fast but incorrect one."""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences and context:\n{playbook_context}"
@@ -477,15 +552,57 @@ For code/logic problems:
 - Verify the logic is sound
 - Check edge cases if applicable
 
-STEP 4 - VERIFICATION (ESSENTIAL):
-- Re-read the original question/task
-- Verify your answer directly addresses what was asked
-- Check that your answer is:
-  ✓ Mathematically/logically correct
-  ✓ Complete (all parts answered)
-  ✓ Relevant (addresses the specific question)
-  ✓ Reasonable (makes sense in context)
-- If solving a problem, verify by working backwards or using an alternative method when possible
+STEP 4 - SELF-VERIFICATION (MANDATORY - DO NOT SKIP):
+This step is CRITICAL. You must verify your answer before responding.
+
+VERIFICATION PROCESS:
+1. Re-read the original question/task completely
+2. Identify the problem type and apply type-specific verification:
+   
+   For MATHEMATICAL problems:
+   - Work backwards: Plug your answer into the original equation
+   - Use alternative method: Solve differently and compare
+   - Check reasonableness: Is the answer plausible? (e.g., positive values where expected)
+   - Verify units: Do units match expected format?
+   - Recalculate: Check critical calculations manually
+   
+   For LOGICAL problems:
+   - Verify conclusion follows from premises
+   - Test with examples: Does reasoning hold?
+   - Check for logical gaps or fallacies
+   - Ensure all constraints are satisfied
+   
+   For FACTUAL questions:
+   - Verify all facts are accurate
+   - Check consistency of information
+   - Ensure precision (dates, numbers, names)
+   
+   For CODE/PROGRAMMING:
+   - Trace logic with example inputs
+   - Check edge cases and error handling
+   - Verify requirements are met
+   - Test algorithm correctness
+   
+   For CREATIVE/CONTENT:
+   - Verify all requirements met
+   - Check structure and organization
+   - Ensure consistency and clarity
+   
+   For ANALYSIS:
+   - Verify logical flow
+   - Check evidence supports conclusions
+   - Ensure completeness
+
+3. Final verification checklist:
+   ✓ Does my answer address the actual question?
+   ✓ Is my answer accurate and correct?
+   ✓ Is my answer complete (all parts)?
+   ✓ Is my reasoning sound and clear?
+   ✓ Have I verified using appropriate methods?
+
+4. If verification fails: Revise your answer and re-verify
+
+ONLY proceed to formatting once ALL verification checks pass.
 
 STEP 5 - FORMATTING:
 - Structure your response clearly
@@ -675,7 +792,28 @@ Guidelines for notebook field:
 - If there are MULTIPLE notebooks: You MUST create new content (refine one, combine, or merge) - NEVER "no update"
 - Always provide valid JSON
 
-IMPORTANT: When refining, prioritize fixing accuracy errors first, then completeness, then clarity."""
+SELF-VERIFICATION FOR REFINEMENT (MANDATORY):
+
+Before finalizing your refined output, you MUST verify:
+
+VERIFICATION CHECKLIST:
+□ Are all corrections accurate? (Re-check any changes you made)
+□ Have I improved accuracy without introducing errors?
+□ Is the refined content more complete than the original?
+□ Is the refined content clearer and better organized?
+□ Have I preserved all correct information from the original?
+□ Does the refined output address the refinement request?
+
+VERIFICATION BY CONTENT TYPE:
+- Mathematical: Re-check all calculations, verify formulas are correct
+- Logical: Verify reasoning is sound, check for logical gaps
+- Factual: Verify all facts are accurate, check consistency
+- Code: Trace through logic, test with examples
+- Creative/Analysis: Verify improvements maintain quality
+
+If verification fails, revise your refinement and re-verify.
+
+IMPORTANT: When refining, prioritize fixing accuracy errors first, then completeness, then clarity. ALWAYS verify all improvements are correct before responding."""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
@@ -983,11 +1121,33 @@ ACTIONABLE SUGGESTIONS:
 - Suggest how to improve completeness and clarity
 - Give examples of better approaches when helpful
 
+SELF-VERIFICATION FOR FEEDBACK (MANDATORY):
+
+Before providing your feedback, verify:
+
+VERIFICATION CHECKLIST:
+□ Is my feedback accurate? (Have I correctly identified strengths/weaknesses?)
+□ Are my suggestions correct and actionable?
+□ Have I provided comprehensive analysis for each output?
+□ Is my feedback constructive and helpful?
+□ Have I prioritized accuracy issues appropriately?
+□ Is my feedback clear and well-organized?
+
+VERIFICATION BY PROBLEM TYPE:
+- Mathematical feedback: Verify you correctly identified calculation errors
+- Logical feedback: Verify reasoning assessments are sound
+- Factual feedback: Verify you correctly identified inaccuracies
+- Code feedback: Verify technical assessments are correct
+- General feedback: Verify overall quality assessments are fair
+
+If your feedback assessment might be incorrect, revise before responding.
+
 RESPONSE REQUIREMENTS:
 - Format feedback clearly with sections for each output
 - Be specific and constructive
 - Prioritize accuracy improvements in suggestions
-- Use clear headings and structure for readability"""
+- Use clear headings and structure for readability
+- VERIFY your feedback is accurate before finalizing"""
     
     # Generate feedback (moderate temperature for balanced feedback)
     response = await generate_response(
@@ -1470,7 +1630,29 @@ Guidelines for notebook field:
 - If there's NO notebook content in inputs: Return "no update"
 - If there's ONE notebook to summarize: Return the accurately summarized version
 - If there are MULTIPLE notebooks: Create a combined summary that accurately represents all content
-- Always provide valid JSON"""
+- Always preserve accuracy: Every fact, number, and key detail must be correct
+- Always provide valid JSON
+
+SELF-VERIFICATION FOR SUMMARIZATION (MANDATORY):
+
+Before finalizing your summary, verify:
+
+VERIFICATION CHECKLIST:
+□ Are all facts and numbers in the summary accurate? (Compare to original)
+□ Have I preserved the meaning and intent correctly?
+□ Have I included all key points and insights?
+□ Is nothing critical omitted from the summary?
+□ Is the summary clear and well-organized?
+□ Does the summary accurately represent the source content?
+
+VERIFICATION BY CONTENT TYPE:
+- Mathematical: Verify formulas, calculations, and numbers are preserved accurately
+- Logical: Verify logical structure and reasoning are maintained
+- Factual: Verify dates, names, numbers, and facts are correct
+- Code: Verify technical accuracy is maintained
+- Creative/Analysis: Verify key themes and insights are preserved
+
+If verification reveals inaccuracies or omissions, revise your summary and re-verify."""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
@@ -1723,7 +1905,28 @@ Guidelines for notebook field:
 - Use majority voting: Choose the most common AND most accurate content, or merge agreements intelligently
 - Always provide valid JSON
 
-IMPORTANT: When aggregating, prioritize accuracy over frequency. A correct answer is always better than a common wrong answer."""
+SELF-VERIFICATION FOR AGGREGATION (MANDATORY):
+
+Before finalizing your consensus answer, verify:
+
+VERIFICATION CHECKLIST:
+□ Have I correctly identified which answer is most accurate? (Not just most common)
+□ Is my consensus answer actually correct? (Verify independently)
+□ Have I properly evaluated all outputs?
+□ Is my voting logic sound and transparent?
+□ Does the consensus answer address the original question?
+□ Have I explained my reasoning clearly?
+
+VERIFICATION BY PROBLEM TYPE:
+- Mathematical: Verify the consensus answer is mathematically correct
+- Logical: Verify the consensus reasoning is logically sound
+- Factual: Verify the consensus facts are accurate
+- Code: Verify the consensus code is correct and functional
+- General: Verify the consensus represents the best quality answer
+
+CRITICAL: If the most common answer is incorrect, you MUST choose the correct answer instead, even if it's less common. Verify correctness independently.
+
+IMPORTANT: When aggregating, prioritize accuracy over frequency. A correct answer is always better than a common wrong answer. ALWAYS verify your consensus answer is correct before responding."""
     
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
