@@ -197,19 +197,66 @@ Remember: ACCURACY IS PARAMOUNT. A correct, well-reasoned answer is far more val
     if playbook_context:
         system_prompt += f"\n\nUser preferences and context:\n{playbook_context}"
     
-    # Build task prompt with enhanced instructions
-    task_prompt = f"""Task: {component_input.task}
+    # Build task prompt with advanced prompt engineering for maximum accuracy
+    task_prompt = f"""TASK: {component_input.task}
 
-Input:
+INPUT TO PROCESS:
 {input_text}
 {previous_context}
 
-Instructions:
-- Read the task and input carefully
-- Show your reasoning process, especially for mathematical or logical problems
-- Verify your answer before responding
-- Ensure your answer directly addresses what is being asked
-- Respond in valid JSON format with "immediate_response" and "notebook" fields"""
+STEP-BY-STEP REASONING PROCESS (CRITICAL FOR ACCURACY):
+
+STEP 1 - UNDERSTAND THE TASK:
+- Carefully read and understand what is being asked
+- Identify the type of problem (mathematical, logical, factual, creative, etc.)
+- Note any specific requirements or constraints
+- Determine if there are multiple parts to address
+
+STEP 2 - ANALYZE THE INPUT:
+- Extract all relevant information from the input
+- Identify key numbers, facts, or concepts
+- Note any previous outputs that provide context
+- Clarify any ambiguities in your understanding
+
+STEP 3 - REASONING AND SOLUTION (MOST CRITICAL):
+For mathematical/logical problems:
+- Break down the problem into smaller steps
+- Show ALL calculations and logical steps clearly
+- Use intermediate values to verify each step
+- Double-check all arithmetic operations
+- Verify units, signs, and decimal places
+
+For factual questions:
+- Recall or reason through the correct information
+- Verify facts against logical consistency
+- Cross-reference related concepts if needed
+
+For code/logic problems:
+- Think through the algorithm or approach step-by-step
+- Verify the logic is sound
+- Check edge cases if applicable
+
+STEP 4 - VERIFICATION (ESSENTIAL):
+- Re-read the original question/task
+- Verify your answer directly addresses what was asked
+- Check that your answer is:
+  ✓ Mathematically/logically correct
+  ✓ Complete (all parts answered)
+  ✓ Relevant (addresses the specific question)
+  ✓ Reasonable (makes sense in context)
+- If solving a problem, verify by working backwards or using an alternative method when possible
+
+STEP 5 - FORMATTING:
+- Structure your response clearly
+- Ensure your immediate_response shows your reasoning process
+- Format as valid JSON with both "immediate_response" and "notebook" fields
+- Make sure the JSON is properly formatted and parseable
+
+RESPONSE REQUIREMENTS:
+- Your "immediate_response" must include your reasoning process AND the final answer
+- Be explicit: Show your work, explain your steps, then state your conclusion
+- For math problems, format like: "Step 1: [reasoning] → Step 2: [reasoning] → Final Answer: [answer]"
+- Your response must be accurate, complete, relevant, and clearly formatted"""
     
     # Generate response with optional conversation history (lower temperature for better accuracy)
     response = await generate_response(
@@ -362,18 +409,58 @@ Guidelines for notebook field:
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
     
-    # Build refine prompt with enhanced instructions
-    refine_prompt = f"""Task: {component_input.task}
+    # Build refine prompt with structured improvement process
+    refine_prompt = f"""TASK: {component_input.task}
 
-Original Input:
+ORIGINAL INPUT:
 {input_text}
+
+OUTPUTS TO REFINE:
 {previous_outputs_text}
 
-Instructions:
-- Carefully analyze the outputs to identify areas for improvement
-- Focus especially on improving accuracy, correctness, and clarity
-- Verify that all improvements are correct
-- Respond in valid JSON format with "immediate_response" and "notebook" fields"""
+STEP-BY-STEP REFINEMENT PROCESS:
+
+STEP 1 - ANALYSIS:
+- Carefully review each output to identify what's already correct
+- Identify specific areas that need improvement:
+  * Accuracy errors (incorrect facts, calculations, logic)
+  * Completeness gaps (missing information or parts)
+  * Clarity issues (unclear explanations, poor organization)
+  * Relevance problems (tangential or off-topic content)
+  * Format issues (poor structure or presentation)
+
+STEP 2 - PRIORITIZE IMPROVEMENTS:
+- Focus FIRST on accuracy - correct any errors or mistakes
+- Then address completeness - fill in gaps or missing parts
+- Improve clarity and organization
+- Ensure all improvements maintain or enhance accuracy
+
+STEP 3 - REFINEMENT:
+- For mathematical/logical content: Verify ALL corrections are accurate
+- Show your reasoning for why changes improve accuracy
+- Preserve correct information while fixing errors
+- Add missing details that enhance completeness
+- Reorganize for better clarity and flow
+
+STEP 4 - VERIFICATION:
+- Double-check that all refinements are correct
+- Verify the improved output:
+  ✓ Is more accurate than the original
+  ✓ Is more complete
+  ✓ Is clearer and better organized
+  ✓ Still addresses the original task
+
+STEP 5 - DOCUMENTATION:
+- In your immediate_response, explain:
+  * What you improved and why
+  * How the changes enhance accuracy
+  * Any corrections made to errors
+
+RESPONSE REQUIREMENTS:
+- Respond in valid JSON format with "immediate_response" and "notebook" fields
+- immediate_response: Explanation of improvements focused on accuracy gains
+- notebook: The refined, improved, and ACCURATE version of the content (or "no update" if no improvements needed)
+- Ensure all improvements are verified for correctness"""
     
     # Generate response (lower temperature for more precise refinements)
     response = await generate_response(
@@ -507,18 +594,71 @@ CRITICAL QUALITY STANDARDS:
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
     
-    # Build feedback prompt with enhanced instructions
-    feedback_prompt = f"""Task: {component_input.task}
+    # Build feedback prompt with structured analysis framework
+    feedback_prompt = f"""TASK: {component_input.task}
+
+OUTPUTS TO ANALYZE:
 {outputs_to_analyze}
 
-Instructions:
-- Analyze the outputs accurately and provide structured feedback
-- For each output, identify:
-  1. Strengths (what works well and is correct)
-  2. Weaknesses (what could be improved, including accuracy issues)
-  3. Specific, actionable suggestions for improvement (focus on improving accuracy and quality)
-- Ensure your feedback is accurate, relevant, complete, and clearly formatted
-- Format your feedback with clear sections for easy reading"""
+STRUCTURED ANALYSIS FRAMEWORK:
+
+For EACH output, perform this analysis:
+
+1. ACCURACY ASSESSMENT (MOST CRITICAL):
+   - Verify: Are the facts correct?
+   - Check: Are calculations accurate (if applicable)?
+   - Validate: Is the logic sound?
+   - Identify: Any errors or inaccuracies?
+   - Note: What is correct and should be preserved?
+
+2. RELEVANCE CHECK:
+   - Does it address the task/question?
+   - Is it on-topic?
+   - Any irrelevant or tangential content?
+
+3. COMPLETENESS EVALUATION:
+   - Are all parts of the question/task addressed?
+   - Any missing information or incomplete answers?
+   - What additional details would help?
+
+4. CLARITY REVIEW:
+   - Is the explanation clear and understandable?
+   - Is it well-organized?
+   - Any confusing or ambiguous parts?
+
+5. FORMAT AND STRUCTURE:
+   - Is it properly formatted?
+   - Is the structure logical and easy to follow?
+
+6. SAFETY AND APPROPRIATENESS:
+   - Is the content appropriate?
+   - Any concerns about safety or ethics?
+
+FEEDBACK STRUCTURE:
+
+For each output, provide:
+
+STRENGTHS:
+- List what works well (especially accurate parts)
+- Highlight correct information and good reasoning
+- Note effective explanations or structure
+
+WEAKNESSES:
+- Identify specific issues, especially accuracy errors
+- Note incomplete or unclear parts
+- Point out format or structure problems
+
+ACTIONABLE SUGGESTIONS:
+- Provide specific, concrete improvements
+- Focus on fixing accuracy issues first
+- Suggest how to improve completeness and clarity
+- Give examples of better approaches when helpful
+
+RESPONSE REQUIREMENTS:
+- Format feedback clearly with sections for each output
+- Be specific and constructive
+- Prioritize accuracy improvements in suggestions
+- Use clear headings and structure for readability"""
     
     # Generate feedback (moderate temperature for balanced feedback)
     response = await generate_response(
@@ -961,20 +1101,59 @@ Guidelines for notebook field:
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
     
-    # Build summary prompt with enhanced instructions
-    summary_prompt = f"""Task: {component_input.task}
+    # Build summary prompt with accuracy-focused summarization process
+    summary_prompt = f"""TASK: {component_input.task}
 
-Content to summarize:
+CONTENT TO SUMMARIZE:
 {combined_content}
 
-Instructions:
-- Create a comprehensive, accurate summary that:
-  1. Captures ALL main points and key insights correctly
-  2. Maintains accuracy of all facts and numbers
-  3. Removes redundancy while preserving important details
-  4. Organizes information logically and clearly
-- Verify that your summary accurately represents the source content
-- Respond in valid JSON format with "immediate_response" and "notebook" fields"""
+STEP-BY-STEP SUMMARIZATION PROCESS:
+
+STEP 1 - EXTRACT KEY INFORMATION:
+- Identify all main points and central ideas
+- Extract important facts, numbers, and statistics (PRESERVE ACCURACY)
+- Note key conclusions or insights
+- List all essential details that must be preserved
+
+STEP 2 - VERIFY ACCURACY:
+- Double-check all facts and numbers before including them
+- Ensure no information is distorted or misrepresented
+- Verify that key concepts are correctly understood
+- Preserve the meaning and intent of the original
+
+STEP 3 - ORGANIZE LOGICALLY:
+- Group related information together
+- Arrange in a logical flow (chronological, thematic, or hierarchical)
+- Create clear structure with sections if helpful
+- Ensure smooth transitions between ideas
+
+STEP 4 - ELIMINATE REDUNDANCY:
+- Identify and remove repetitive information
+- Consolidate similar points
+- Keep only the most important examples
+- Maintain clarity while reducing length
+
+STEP 5 - PRESERVE COMPLETENESS:
+- Ensure no critical information is omitted
+- Include all essential details needed to understand the content
+- Cover all main points comprehensively
+- Maintain the full context needed for accuracy
+
+STEP 6 - FINAL VERIFICATION:
+- Re-read the original content
+- Verify your summary:
+  ✓ Accurately represents all main points
+  ✓ Preserves correct facts and numbers
+  ✓ Maintains logical completeness
+  ✓ Is clear and well-organized
+  ✓ Removes redundancy without losing essential information
+
+RESPONSE REQUIREMENTS:
+- Respond in valid JSON format with "immediate_response" and "notebook" fields
+- immediate_response: Brief explanation of what was summarized
+- notebook: The accurate, comprehensive summary (or "no update" if no notebook content)
+- Prioritize accuracy: Every fact and number must be correct
+- Ensure completeness: All key points must be included"""
     
     # Generate summary (moderate temperature for balanced summaries)
     response = await generate_response(
@@ -1140,21 +1319,72 @@ Guidelines for notebook field:
     if playbook_context:
         system_prompt += f"\n\nUser preferences:\n{playbook_context}"
     
-    # Build aggregate prompt with enhanced instructions
-    aggregate_prompt = f"""Task: {component_input.task}
+    # Build aggregate prompt with accuracy-prioritized consensus building
+    aggregate_prompt = f"""TASK: {component_input.task}
 
-Multiple outputs to aggregate:
+MULTIPLE OUTPUTS TO AGGREGATE:
 {combined_outputs}
 
-Instructions:
-- Carefully analyze these outputs and determine the consensus answer by:
-  1. Identifying common themes and agreements (especially correct answers)
-  2. Noting where outputs differ and why
-  3. Using majority voting logic: Choose the most commonly correct answer
-  4. Prioritizing accuracy: If one answer is clearly more accurate, prefer it
-  5. Highlighting any important minority opinions that might be valid
-- Verify the consensus answer is correct and well-reasoned
-- Respond in valid JSON format with "immediate_response" and "notebook" fields"""
+STEP-BY-STEP CONSENSUS BUILDING PROCESS:
+
+STEP 1 - INDIVIDUAL ANALYSIS:
+- Review each output independently
+- For each output, identify:
+  * The main answer or conclusion
+  * The reasoning provided
+  * Key facts or numbers mentioned
+  * Any unique insights or perspectives
+
+STEP 2 - ACCURACY EVALUATION (CRITICAL):
+- Evaluate each answer for correctness:
+  * Are the facts accurate?
+  * Are calculations correct (if applicable)?
+  * Is the logic sound?
+  * Does it make sense?
+- Note which outputs appear most accurate
+
+STEP 3 - PATTERN IDENTIFICATION:
+- Identify common themes and agreements:
+  * Which answers are similar or identical?
+  * What do most outputs agree on?
+  * Which facts are consistently mentioned?
+- Identify differences:
+  * Where do outputs disagree?
+  * What are the conflicting answers?
+  * Why might they differ?
+
+STEP 4 - ACCURACY-PRIORITIZED CONSENSUS:
+Priority order for selecting the best answer:
+1. MOST ACCURATE: If one answer is clearly more correct (verified), choose it even if less common
+2. MOST COMMON: Among equally accurate answers, choose the most frequently occurring
+3. BEST REASONED: If accuracy is unclear, prefer the one with strongest reasoning
+4. CONSENSUS BUILDING: If answers differ, synthesize the most accurate elements from each
+
+STEP 5 - SYNTHESIS:
+- If outputs agree: Use the common answer (verify it's correct)
+- If outputs partially agree: Combine accurate elements from multiple outputs
+- If outputs disagree: Choose the most accurate answer based on logical analysis
+- Preserve accurate information from minority opinions if verified as correct
+
+STEP 6 - VERIFICATION:
+- Verify your consensus answer:
+  ✓ Is it more accurate than individual outputs (if possible)?
+  ✓ Does it incorporate the best elements from all outputs?
+  ✓ Is it well-reasoned and logically sound?
+  ✓ Does it address the original question/task?
+
+STEP 7 - DOCUMENTATION:
+- Explain your consensus-building process
+- Note which outputs agreed and which differed
+- Explain why you chose the consensus answer (especially if prioritizing accuracy over frequency)
+- Mention any important minority opinions that were considered
+
+RESPONSE REQUIREMENTS:
+- Respond in valid JSON format with "immediate_response" and "notebook" fields
+- immediate_response: Detailed explanation of consensus process, voting results, and why the answer was chosen
+- notebook: The aggregated/consensus content (or "no update" if no notebook content)
+- Prioritize accuracy: The correct answer is more important than the most common answer
+- Be transparent: Show your reasoning for the consensus choice"""
     
     # Generate aggregate result (low temperature for deterministic consensus)
     response = await generate_response(
