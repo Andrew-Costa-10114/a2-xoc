@@ -7,7 +7,8 @@ All components follow the same pattern:
 
 import json
 import logging
-from typing import List
+import re
+from typing import List, Tuple
 
 try:
     from duckduckgo_search import DDGS
@@ -29,6 +30,185 @@ logger = logging.getLogger(__name__)
 
 # Initialize playbook service (will be set up when first used)
 _playbook_service = None
+
+
+def parse_json_response(response: str, component_name: str = "component", fallback_response: str = None) -> Tuple[str, str]:
+    """
+    Robustly parse JSON response from LLM output.
+    
+    Handles various formats:
+    - Direct JSON objects
+    - JSON wrapped in markdown code blocks (```json or ```)
+    - Malformed JSON with common issues
+    - Missing or incorrect field types
+    
+    Args:
+        response: Raw response string from LLM
+        component_name: Name of component (for logging)
+        fallback_response: Fallback text to use if parsing fails completely
+        
+    Returns:
+        Tuple of (immediate_response, notebook_output)
+    """
+    if not response or not response.strip():
+        logger.warning(f"[{component_name}] Empty response received")
+        return (fallback_response or ""), "no update"
+    
+    response_text = response.strip()
+    original_response = response_text
+    
+    # Method 1: Try extracting from markdown code blocks
+    json_candidates = []
+    
+    # Extract from ```json blocks
+    if "```json" in response_text:
+        try:
+            extracted = response_text.split("```json")[1].split("```")[0].strip()
+            if extracted:
+                json_candidates.append(extracted)
+        except (IndexError, AttributeError):
+            pass
+    
+    # Extract from generic ``` blocks (if no json block found)
+    if not json_candidates and "```" in response_text:
+        try:
+            # Try to find code blocks and extract JSON-like content
+            code_blocks = re.findall(r'```[a-z]*\s*\n(.*?)\n```', response_text, re.DOTALL)
+            for block in code_blocks:
+                stripped = block.strip()
+                if stripped.startswith('{') and stripped.endswith('}'):
+                    json_candidates.append(stripped)
+        except (AttributeError, IndexError):
+            pass
+    
+    # Method 2: Try the whole response if it looks like JSON
+    if response_text.startswith('{') and response_text.endswith('}'):
+        json_candidates.append(response_text)
+    
+    # Method 3: Try to find JSON object in the response (for cases where there's extra text)
+    if not json_candidates:
+        # Find the first { ... } pair that looks like JSON
+        brace_start = response_text.find('{')
+        if brace_start >= 0:
+            brace_count = 0
+            for i in range(brace_start, len(response_text)):
+                if response_text[i] == '{':
+                    brace_count += 1
+                elif response_text[i] == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        candidate = response_text[brace_start:i+1]
+                        if ':' in candidate and ('"immediate_response' in candidate or '"notebook' in candidate):
+                            json_candidates.append(candidate.strip())
+                        break
+    
+    # Try parsing each candidate
+    for candidate in json_candidates:
+        try:
+            result = json.loads(candidate)
+            
+            # Extract fields with proper defaults
+            immediate_response = result.get("immediate_response", "")
+            notebook_output = result.get("notebook", "no update")
+            
+            # Validate we got something useful
+            if immediate_response or notebook_output != "no update":
+                # Ensure notebook is a string
+                notebook_output = _normalize_notebook(notebook_output, component_name)
+                
+                logger.info(f"[{component_name}] Successfully parsed JSON response")
+                return immediate_response, notebook_output
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.debug(f"[{component_name}] Failed to parse JSON candidate: {e}")
+            continue
+    
+    # Method 4: Try to fix common JSON issues and parse again
+    logger.warning(f"[{component_name}] Standard JSON parsing failed, attempting to fix common issues")
+    
+    # Try to extract JSON with common fixes
+    fixed_candidates = []
+    
+    # Fix 1: Remove trailing commas before closing braces
+    for candidate in json_candidates if json_candidates else [response_text]:
+        fixed = re.sub(r',\s*}', '}', candidate)
+        fixed = re.sub(r',\s*]', ']', fixed)
+        fixed_candidates.append(fixed)
+    
+    # Fix 2: Try to extract fields using regex as last resort
+    if not fixed_candidates:
+        immediate_match = re.search(r'"immediate_response"\s*:\s*"((?:[^"\\]|\\.)*)"', response_text, re.DOTALL)
+        notebook_match = re.search(r'"notebook"\s*:\s*"((?:[^"\\]|\\.)*)"', response_text, re.DOTALL)
+        
+        if immediate_match or notebook_match:
+            immediate_response = immediate_match.group(1) if immediate_match else ""
+            notebook_raw = notebook_match.group(1) if notebook_match else "no update"
+            
+            # Unescape JSON strings
+            immediate_response = _unescape_json_string(immediate_response)
+            if notebook_raw.lower() == "no update":
+                notebook_output = "no update"
+            else:
+                notebook_output = _unescape_json_string(notebook_raw)
+            
+            notebook_output = _normalize_notebook(notebook_output, component_name)
+            
+            logger.info(f"[{component_name}] Extracted fields using regex fallback")
+            return immediate_response, notebook_output
+    
+    # Try parsing fixed candidates
+    for fixed in fixed_candidates:
+        try:
+            result = json.loads(fixed)
+            immediate_response = result.get("immediate_response", "")
+            notebook_output = result.get("notebook", "no update")
+            
+            if immediate_response or notebook_output != "no update":
+                notebook_output = _normalize_notebook(notebook_output, component_name)
+                logger.info(f"[{component_name}] Successfully parsed fixed JSON")
+                return immediate_response, notebook_output
+        except (json.JSONDecodeError, ValueError, TypeError):
+            continue
+    
+    # Final fallback: return original response as immediate_response
+    logger.error(f"[{component_name}] All JSON parsing attempts failed, using fallback")
+    fallback_text = fallback_response or original_response[:5000]  # Limit length
+    return fallback_text, "no update"
+
+
+def _normalize_notebook(notebook_output, component_name: str) -> str:
+    """Normalize notebook output to string format."""
+    if isinstance(notebook_output, dict):
+        logger.warning(f"[{component_name}] Notebook returned as dict, converting to JSON string")
+        return json.dumps(notebook_output, indent=2)
+    elif isinstance(notebook_output, list):
+        logger.warning(f"[{component_name}] Notebook returned as list, converting to JSON string")
+        return json.dumps(notebook_output, indent=2)
+    elif not isinstance(notebook_output, str):
+        logger.warning(f"[{component_name}] Notebook is not a string (type: {type(notebook_output)}), converting")
+        return str(notebook_output)
+    return notebook_output
+
+
+def _unescape_json_string(text: str) -> str:
+    """Unescape common JSON escape sequences."""
+    if not text:
+        return text
+    
+    # Replace common escape sequences
+    replacements = {
+        '\\n': '\n',
+        '\\"': '"',
+        "\\'": "'",
+        '\\t': '\t',
+        '\\r': '\r',
+        '\\\\': '\\',
+    }
+    
+    result = text
+    for escaped, unescaped in replacements.items():
+        result = result.replace(escaped, unescaped)
+    
+    return result.strip()
 
 
 def get_playbook_service() -> PlaybookService:
@@ -266,31 +446,8 @@ RESPONSE REQUIREMENTS:
         temperature=0.2  # Lower temperature for more deterministic, accurate answers
     )
     
-    # Parse JSON response
-    try:
-        # Try to extract JSON from response (handle markdown code blocks)
-        response_text = response.strip()
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-        
-        result = json.loads(response_text)
-        immediate_response = result.get("immediate_response", response)
-        notebook_output = result.get("notebook", "no update")
-        
-        # Ensure notebook is a string (convert dict/object to JSON string if needed)
-        if isinstance(notebook_output, dict):
-            logger.warning(f"[complete] Notebook returned as dict, converting to JSON string")
-            notebook_output = json.dumps(notebook_output, indent=2)
-        elif not isinstance(notebook_output, str):
-            logger.warning(f"[complete] Notebook is not a string (type: {type(notebook_output)}), converting")
-            notebook_output = str(notebook_output)
-            
-    except (json.JSONDecodeError, IndexError) as e:
-        logger.warning(f"[complete] Failed to parse JSON response: {e}. Using raw response.")
-        immediate_response = response
-        notebook_output = "no update"
+    # Parse JSON response using robust parsing function
+    immediate_response, notebook_output = parse_json_response(response, "complete", fallback_response=response)
     
     # Resolve "no update" for notebook - return previous notebook if exists
     if notebook_output == "no update" and component_input.previous_outputs:
@@ -470,30 +627,8 @@ RESPONSE REQUIREMENTS:
         temperature=0.3  # Lower temperature for more accurate refinements
     )
     
-    # Parse JSON response
-    try:
-        response_text = response.strip()
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-        
-        result = json.loads(response_text)
-        immediate_response = result.get("immediate_response", response)
-        notebook_output = result.get("notebook", "no update")
-        
-        # Ensure notebook is a string (convert dict/object to JSON string if needed)
-        if isinstance(notebook_output, dict):
-            logger.warning(f"[refine] Notebook returned as dict, converting to JSON string")
-            notebook_output = json.dumps(notebook_output, indent=2)
-        elif not isinstance(notebook_output, str):
-            logger.warning(f"[refine] Notebook is not a string (type: {type(notebook_output)}), converting")
-            notebook_output = str(notebook_output)
-            
-    except (json.JSONDecodeError, IndexError) as e:
-        logger.warning(f"[refine] Failed to parse JSON response: {e}. Using raw response.")
-        immediate_response = response
-        notebook_output = "no update"
+    # Parse JSON response using robust parsing function
+    immediate_response, notebook_output = parse_json_response(response, "refine", fallback_response=response)
     
     # Resolve "no update" for notebook - return previous notebook if exists
     if notebook_output == "no update" and component_input.previous_outputs:
@@ -1163,30 +1298,8 @@ RESPONSE REQUIREMENTS:
         temperature=0.4  # Slightly lower for more accurate summaries
     )
     
-    # Parse JSON response
-    try:
-        response_text = response.strip()
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-        
-        result = json.loads(response_text)
-        immediate_response = result.get("immediate_response", response)
-        notebook_output = result.get("notebook", "no update")
-        
-        # Ensure notebook is a string
-        if isinstance(notebook_output, dict):
-            logger.warning(f"[summary] Notebook returned as dict, converting to JSON string")
-            notebook_output = json.dumps(notebook_output, indent=2)
-        elif not isinstance(notebook_output, str):
-            logger.warning(f"[summary] Notebook is not a string (type: {type(notebook_output)}), converting")
-            notebook_output = str(notebook_output)
-            
-    except (json.JSONDecodeError, IndexError) as e:
-        logger.warning(f"[summary] Failed to parse JSON response: {e}. Using raw response.")
-        immediate_response = response
-        notebook_output = "no update"
+    # Parse JSON response using robust parsing function
+    immediate_response, notebook_output = parse_json_response(response, "summary", fallback_response=response)
     
     # Resolve "no update" for notebook - return previous notebook if exists
     if notebook_output == "no update" and component_input.previous_outputs:
@@ -1394,30 +1507,8 @@ RESPONSE REQUIREMENTS:
         temperature=0.2  # Very low temperature for accurate, deterministic consensus
     )
     
-    # Parse JSON response
-    try:
-        response_text = response.strip()
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-        
-        result = json.loads(response_text)
-        immediate_response = result.get("immediate_response", response)
-        notebook_output = result.get("notebook", "no update")
-        
-        # Ensure notebook is a string
-        if isinstance(notebook_output, dict):
-            logger.warning(f"[aggregate] Notebook returned as dict, converting to JSON string")
-            notebook_output = json.dumps(notebook_output, indent=2)
-        elif not isinstance(notebook_output, str):
-            logger.warning(f"[aggregate] Notebook is not a string (type: {type(notebook_output)}), converting")
-            notebook_output = str(notebook_output)
-            
-    except (json.JSONDecodeError, IndexError) as e:
-        logger.warning(f"[aggregate] Failed to parse JSON response: {e}. Using raw response.")
-        immediate_response = response
-        notebook_output = "no update"
+    # Parse JSON response using robust parsing function
+    immediate_response, notebook_output = parse_json_response(response, "aggregate", fallback_response=response)
     
     # Resolve "no update" for notebook - return previous notebook if exists
     if notebook_output == "no update" and component_input.previous_outputs:
