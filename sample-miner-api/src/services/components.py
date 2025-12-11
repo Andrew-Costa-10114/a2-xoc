@@ -236,10 +236,11 @@ async def get_context_additions(
     Returns:
         Tuple of (conversation_history, playbook_context_string)
     """
-    # Get conversation history if enabled
+    # Get conversation history if enabled (optimized: limit to 3 most recent for speed)
     conversation_history = []
     if component_input.use_conversation_history:
-        conversation_history = context.get_recent_messages(count=5)
+        # Limit to 3 most recent messages for faster processing while maintaining context
+        conversation_history = context.get_recent_messages(count=3)
         logger.info(f"[{component_name}] Using conversation history: {len(conversation_history)} messages")
     else:
         logger.info(f"[{component_name}] Conversation history disabled")
@@ -281,23 +282,34 @@ async def component_complete(
     """
     logger.info(f"[complete] Processing task: {component_input.task}")
     
-    # Build input text from all input items
+    # Build input text from all input items (optimized: truncate if too long)
     input_text_parts = []
     for idx, item in enumerate(component_input.input, 1):
-        input_text_parts.append(f"Query {idx}: {item.user_query}")
+        # Truncate individual queries if excessively long (keep first 2000 chars for speed)
+        query_text = item.user_query[:2000] if len(item.user_query) > 2000 else item.user_query
+        input_text_parts.append(f"Query {idx}: {query_text}")
     
     input_text = "\n\n".join(input_text_parts)
+    # Truncate total input if too long (max 5000 chars for faster processing)
+    if len(input_text) > 5000:
+        input_text = input_text[:5000] + "\n[... input truncated for performance ...]"
     
-    # Build previous outputs context - LLM will read everything and decide intelligently
+    # Build previous outputs context (optimized: truncate long outputs for speed)
     previous_context = ""
     if component_input.previous_outputs:
         previous_context = "\n\nPrevious component outputs:\n"
         for prev in component_input.previous_outputs:
-            # Show the complete output with immediate_response and notebook
+            # Truncate long responses for faster processing (keep first 500 chars)
+            response_text = prev.output.immediate_response[:500] if len(prev.output.immediate_response) > 500 else prev.output.immediate_response
             previous_context += f"\n[{prev.component}] {prev.task}:\n"
-            previous_context += f"  Response: {prev.output.immediate_response}\n"
-            if prev.output.notebook and prev.output.notebook != "no update":
-                previous_context += f"  Notebook: {prev.output.notebook}\n"
+            previous_context += f"  Response: {response_text}"
+            if len(prev.output.immediate_response) > 500:
+                previous_context += " [...]"
+            previous_context += "\n"
+            # Only include notebook if it's short (long notebooks slow down processing)
+            if prev.output.notebook and prev.output.notebook != "no update" and len(prev.output.notebook) < 1000:
+                notebook_preview = prev.output.notebook[:500] if len(prev.output.notebook) > 500 else prev.output.notebook
+                previous_context += f"  Notebook: {notebook_preview}\n"
     
     # Get conversation history and playbook context
     conversation_history, playbook_context = await get_context_additions(
@@ -616,12 +628,14 @@ RESPONSE REQUIREMENTS:
 - For math problems, format like: "Step 1: [reasoning] → Step 2: [reasoning] → Final Answer: [answer]"
 - Your response must be accurate, complete, relevant, and clearly formatted"""
     
-    # Generate response with optional conversation history (lower temperature for better accuracy)
+    # Generate response with optional conversation history (optimized for speed + accuracy)
     response = await generate_response(
         prompt=task_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.2  # Lower temperature for more deterministic, accurate answers
+        temperature=0.2,  # Lower temperature for more deterministic, accurate answers
+        max_tokens=2000,  # Optimized limit: enough for quality, fast generation
+        response_format={"type": "json_object"}  # JSON mode for faster parsing
     )
     
     # Parse JSON response using robust parsing function
@@ -672,22 +686,30 @@ async def component_refine(
     """
     logger.info(f"[refine] Processing task: {component_input.task}")
     
-    # Build input text
+    # Build input text (optimized: truncate if too long)
     input_text_parts = []
     for idx, item in enumerate(component_input.input, 1):
-        input_text_parts.append(f"Query {idx}: {item.user_query}")
+        query_text = item.user_query[:2000] if len(item.user_query) > 2000 else item.user_query
+        input_text_parts.append(f"Query {idx}: {query_text}")
     
     input_text = "\n\n".join(input_text_parts)
+    if len(input_text) > 5000:
+        input_text = input_text[:5000] + "\n[... input truncated for performance ...]"
     
-    # Build previous outputs context - LLM will read everything and decide intelligently
+    # Build previous outputs context (optimized: truncate long outputs)
     previous_outputs_text = ""
     if component_input.previous_outputs:
         previous_outputs_text = "\n\nPrevious outputs to refine:\n"
         for prev in component_input.previous_outputs:
+            response_text = prev.output.immediate_response[:500] if len(prev.output.immediate_response) > 500 else prev.output.immediate_response
             previous_outputs_text += f"\n[{prev.component}] {prev.task}:\n"
-            previous_outputs_text += f"  Response: {prev.output.immediate_response}\n"
-            if prev.output.notebook and prev.output.notebook != "no update":
-                previous_outputs_text += f"  Notebook: {prev.output.notebook}\n"
+            previous_outputs_text += f"  Response: {response_text}"
+            if len(prev.output.immediate_response) > 500:
+                previous_outputs_text += " [...]"
+            previous_outputs_text += "\n"
+            if prev.output.notebook and prev.output.notebook != "no update" and len(prev.output.notebook) < 1000:
+                notebook_preview = prev.output.notebook[:500] if len(prev.output.notebook) > 500 else prev.output.notebook
+                previous_outputs_text += f"  Notebook: {notebook_preview}\n"
     
     # Get conversation history and playbook context
     conversation_history, playbook_context = await get_context_additions(
@@ -871,12 +893,14 @@ RESPONSE REQUIREMENTS:
 - notebook: The refined, improved, and ACCURATE version of the content (or "no update" if no improvements needed)
 - Ensure all improvements are verified for correctness"""
     
-    # Generate response (lower temperature for more precise refinements)
+    # Generate response (optimized for speed + accuracy)
     response = await generate_response(
         prompt=refine_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.3  # Lower temperature for more accurate refinements
+        temperature=0.3,  # Lower temperature for more accurate refinements
+        max_tokens=2000,  # Optimized limit for refinements
+        response_format={"type": "json_object"}  # JSON mode for faster parsing
     )
     
     # Parse JSON response using robust parsing function
@@ -927,16 +951,20 @@ async def component_feedback(
     """
     logger.info(f"[feedback] Processing task: {component_input.task}")
     
-    # Build previous outputs to analyze
+    # Build previous outputs to analyze (optimized: truncate long outputs)
     outputs_to_analyze = ""
     if component_input.previous_outputs:
         outputs_to_analyze = "\n\nOutputs to analyze:\n"
         for prev in component_input.previous_outputs:
-            # Access Pydantic object attributes
+            response_text = prev.output.immediate_response[:500] if len(prev.output.immediate_response) > 500 else prev.output.immediate_response
             outputs_to_analyze += f"\n[{prev.component}] {prev.task}:\n"
-            outputs_to_analyze += f"  Response: {prev.output.immediate_response}\n"
-            if prev.output.notebook and prev.output.notebook != "no update":
-                outputs_to_analyze += f"  Notebook: {prev.output.notebook}\n"
+            outputs_to_analyze += f"  Response: {response_text}"
+            if len(prev.output.immediate_response) > 500:
+                outputs_to_analyze += " [...]"
+            outputs_to_analyze += "\n"
+            if prev.output.notebook and prev.output.notebook != "no update" and len(prev.output.notebook) < 1000:
+                notebook_preview = prev.output.notebook[:500] if len(prev.output.notebook) > 500 else prev.output.notebook
+                outputs_to_analyze += f"  Notebook: {notebook_preview}\n"
     
     # Get conversation history and playbook context
     conversation_history, playbook_context = await get_context_additions(
@@ -1149,12 +1177,14 @@ RESPONSE REQUIREMENTS:
 - Use clear headings and structure for readability
 - VERIFY your feedback is accurate before finalizing"""
     
-    # Generate feedback (moderate temperature for balanced feedback)
+    # Generate feedback (optimized for speed + accuracy)
     response = await generate_response(
         prompt=feedback_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.4  # Lower temperature for more accurate, focused feedback
+        temperature=0.4,  # Lower temperature for more accurate, focused feedback
+        max_tokens=1500,  # Feedback typically shorter, faster generation
+        response_format={"type": "json_object"}  # JSON mode for faster parsing
     )
     
     # Store in conversation history
@@ -1506,18 +1536,27 @@ async def component_summary(
     """
     logger.info(f"[summary] Processing task: {component_input.task}")
     
-    # Build content to summarize from previous outputs
+    # Build content to summarize from previous outputs (optimized: truncate long content)
     content_to_summarize = []
     if component_input.previous_outputs:
         for prev in component_input.previous_outputs:
-            # Access Pydantic object attributes
+            # Truncate long responses for faster processing
+            response_text = prev.output.immediate_response[:1000] if len(prev.output.immediate_response) > 1000 else prev.output.immediate_response
             output_text = f"[{prev.component}] {prev.task}:\n"
-            output_text += f"Response: {prev.output.immediate_response}\n"
-            if prev.output.notebook and prev.output.notebook != "no update":
-                output_text += f"Notebook: {prev.output.notebook}\n"
+            output_text += f"Response: {response_text}"
+            if len(prev.output.immediate_response) > 1000:
+                output_text += " [...]"
+            output_text += "\n"
+            # Only include short notebooks
+            if prev.output.notebook and prev.output.notebook != "no update" and len(prev.output.notebook) < 1500:
+                notebook_preview = prev.output.notebook[:1000] if len(prev.output.notebook) > 1000 else prev.output.notebook
+                output_text += f"Notebook: {notebook_preview}\n"
             content_to_summarize.append(output_text)
     
-
+    # Truncate combined content if too long (max 10000 chars)
+    combined_content = "\n\n---\n\n".join(content_to_summarize)
+    if len(combined_content) > 10000:
+        combined_content = combined_content[:10000] + "\n\n[... content truncated for performance ...]"
     
     if not content_to_summarize:
         return ComponentOutput(
@@ -1530,8 +1569,6 @@ async def component_summary(
             ),
             component="summary"
         )
-    
-    combined_content = "\n\n---\n\n".join(content_to_summarize)
     
     # Get conversation history and playbook context
     conversation_history, playbook_context = await get_context_additions(
@@ -1711,12 +1748,14 @@ RESPONSE REQUIREMENTS:
 - Prioritize accuracy: Every fact and number must be correct
 - Ensure completeness: All key points must be included"""
     
-    # Generate summary (moderate temperature for balanced summaries)
+    # Generate summary (optimized for speed + accuracy)
     response = await generate_response(
         prompt=summary_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.4  # Slightly lower for more accurate summaries
+        temperature=0.4,  # Slightly lower for more accurate summaries
+        max_tokens=2000,  # Optimized limit for summaries
+        response_format={"type": "json_object"}  # JSON mode for faster parsing
     )
     
     # Parse JSON response using robust parsing function
@@ -1784,17 +1823,26 @@ async def component_aggregate(
             component="aggregate"
         )
     
-    # Build outputs for analysis
+    # Build outputs for analysis (optimized: truncate long outputs)
     outputs_text = []
     for idx, prev in enumerate(component_input.previous_outputs, 1):
-        # Access Pydantic object attributes
+        # Truncate long responses for faster processing
+        response_text = prev.output.immediate_response[:1000] if len(prev.output.immediate_response) > 1000 else prev.output.immediate_response
         output_text = f"Output {idx} [{prev.component}]:\n"
-        output_text += f"Response: {prev.output.immediate_response}\n"
-        if prev.output.notebook and prev.output.notebook != "no update":
-            output_text += f"Notebook: {prev.output.notebook}\n"
+        output_text += f"Response: {response_text}"
+        if len(prev.output.immediate_response) > 1000:
+            output_text += " [...]"
+        output_text += "\n"
+        # Only include short notebooks
+        if prev.output.notebook and prev.output.notebook != "no update" and len(prev.output.notebook) < 1500:
+            notebook_preview = prev.output.notebook[:1000] if len(prev.output.notebook) > 1000 else prev.output.notebook
+            output_text += f"Notebook: {notebook_preview}\n"
         outputs_text.append(output_text)
     
+    # Truncate combined outputs if too long (max 10000 chars)
     combined_outputs = "\n\n---\n\n".join(outputs_text)
+    if len(combined_outputs) > 10000:
+        combined_outputs = combined_outputs[:10000] + "\n\n[... outputs truncated for performance ...]"
     
     # Get conversation history and playbook context
     conversation_history, playbook_context = await get_context_additions(
@@ -1998,12 +2046,14 @@ RESPONSE REQUIREMENTS:
 - Prioritize accuracy: The correct answer is more important than the most common answer
 - Be transparent: Show your reasoning for the consensus choice"""
     
-    # Generate aggregate result (low temperature for deterministic consensus)
+    # Generate aggregate result (optimized for speed + accuracy)
     response = await generate_response(
         prompt=aggregate_prompt,
         system_prompt=system_prompt,
         conversation_history=conversation_history,
-        temperature=0.2  # Very low temperature for accurate, deterministic consensus
+        temperature=0.2,  # Very low temperature for accurate, deterministic consensus
+        max_tokens=2000,  # Optimized limit for aggregation
+        response_format={"type": "json_object"}  # JSON mode for faster parsing
     )
     
     # Parse JSON response using robust parsing function
