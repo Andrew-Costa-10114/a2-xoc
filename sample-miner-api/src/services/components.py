@@ -1293,7 +1293,10 @@ async def component_feedback(
     )
     
     # Build system prompt optimized for problem-type-aware feedback
+    # Note: Must include "json" word for OpenAI response_format requirement
     system_prompt = """You are an AI assistant that provides accurate, constructive, and insightful feedback.
+
+IMPORTANT: You must respond in valid json format with "immediate_response" and "notebook" fields. Always use json format for your responses.
 
 CRITICAL QUALITY STANDARDS:
 
@@ -1492,12 +1495,12 @@ VERIFICATION BY PROBLEM TYPE:
 If your feedback assessment might be incorrect, revise before responding.
 
 RESPONSE REQUIREMENTS:
+- You MUST respond in valid json format with both "immediate_response" and "notebook" fields
 - Format feedback clearly with sections for each output
 - Be specific and constructive
 - Prioritize accuracy improvements in suggestions
 - Use clear headings and structure for readability
-- Format your response as valid JSON with both "immediate_response" and "notebook" fields
-- The immediate_response should contain your feedback analysis
+- The immediate_response should contain your feedback analysis in json format
 - The notebook field should be "no update" for feedback responses
 - VERIFY your feedback is accurate before finalizing"""
     
