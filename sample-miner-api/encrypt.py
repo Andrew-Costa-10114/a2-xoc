@@ -21,7 +21,7 @@ import logging
 import os
 import sys
 
-import bittensor
+import bittensor as bt
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -36,8 +36,8 @@ def generate(name: str, api_url: str, token: str, wallet_password: str) -> str:
     """
     message = api_url + "<seperate>" + token
 
-    # initialize wallet
-    wallet = bittensor.wallet(name=name)
+    # initialize wallet (Bittensor v10 uses Wallet with capital W)
+    wallet = bt.Wallet(name=name)
 
     # store password and unlock
     wallet.coldkey_file.save_password_to_env(wallet_password)
@@ -66,7 +66,7 @@ def generate(name: str, api_url: str, token: str, wallet_password: str) -> str:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Sign a message (api_url + token) with a Bittensor wallet coldkey.")
-    parser.add_argument("--name", required=True, help="Wallet name (as used by bittensor.wallet(name=...)).")
+    parser.add_argument("--name", required=True, help="Wallet name (as used by bittensor.Wallet(name=...)).")
     parser.add_argument("--api-url", required=True, help="API URL to include in the message.")
     parser.add_argument("--token", required=True, help="Token to include in the message.")
     parser.add_argument("--wallet-password", help="Wallet password. If omitted, you'll be prompted securely.")
