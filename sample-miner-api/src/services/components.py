@@ -1496,6 +1496,9 @@ RESPONSE REQUIREMENTS:
 - Be specific and constructive
 - Prioritize accuracy improvements in suggestions
 - Use clear headings and structure for readability
+- Format your response as valid JSON with both "immediate_response" and "notebook" fields
+- The immediate_response should contain your feedback analysis
+- The notebook field should be "no update" for feedback responses
 - VERIFY your feedback is accurate before finalizing"""
     
     # Detect if this is likely an evaluation request for optimization
