@@ -23,9 +23,9 @@ import re
 from typing import List, Tuple, Dict
 
 try:
-    from duckduckgo_search import DDGS
+    from googlesearch import search as google_search
 except ImportError:
-    DDGS = None
+    google_search = None
 
 from src.models.models import (
     ComponentInput, 
@@ -1703,9 +1703,9 @@ async def component_internet_search(
     context: ConversationContext
 ) -> ComponentOutput:
     """
-    Internet search component: Search the internet for information using DuckDuckGo.
+    Internet search component: Search the internet for information using Google search.
     
-    Uses DuckDuckGo search API (free, no API key required) to search the internet
+    Uses Google search (free, no API key required) to search the internet
     for information based on user queries.
     
     Args:
@@ -1717,10 +1717,10 @@ async def component_internet_search(
     """
     logger.info(f"[internet_search] Processing task: {component_input.task}")
     
-    # Check if duckduckgo-search is available
-    if DDGS is None:
-        error_msg = "Internet Search Service: UNAVAILABLE\n\nDuckDuckGo search library not installed. Please install it with: pip install duckduckgo-search"
-        logger.error("[internet_search] DuckDuckGo library not available")
+    # Check if googlesearch library is available
+    if google_search is None:
+        error_msg = "Internet Search Service: UNAVAILABLE\n\nGoogle search library not installed. Please install it with: pip install googlesearch-python"
+        logger.error("[internet_search] Google search library not available")
         context.add_user_message(f"Search: {', '.join(item.user_query for item in component_input.input)}")
         context.add_assistant_message(error_msg)
         return ComponentOutput(
@@ -1745,35 +1745,85 @@ async def component_internet_search(
     all_results = []
     
     try:
-        with DDGS() as ddgs:
-            for query in search_queries:
-                try:
-                    logger.info(f"[internet_search] Searching for: {query}")
-                    # Search with DuckDuckGo (max_results=10 per query)
-                    results = list(ddgs.text(query, max_results=10))
-                    
-                    if results:
-                        query_results = {
-                            "query": query,
-                            "results": results
+        import requests
+        from bs4 import BeautifulSoup
+        
+        for query in search_queries:
+            try:
+                logger.info(f"[internet_search] Searching for: {query}")
+                # Search with Google (num=10 results per query, stop=10 to limit)
+                search_urls = list(google_search(query, num=10, stop=10, pause=2))
+                
+                results = []
+                for url in search_urls:
+                    try:
+                        # Fetch page title
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                         }
-                        all_results.append(query_results)
-                        logger.info(f"[internet_search] Found {len(results)} results for: {query}")
-                    else:
-                        logger.warning(f"[internet_search] No results found for: {query}")
-                        all_results.append({
-                            "query": query,
-                            "results": []
-                        })
+                        response = requests.get(url, headers=headers, timeout=5, allow_redirects=True)
+                        response.raise_for_status()
                         
-                except Exception as e:
-                    logger.error(f"[internet_search] Error searching for '{query}': {str(e)}")
+                        soup = BeautifulSoup(response.content, 'html.parser')
+                        title_tag = soup.find('title')
+                        title = title_tag.get_text().strip() if title_tag else "No title"
+                        
+                        # Try to get description from meta tags
+                        meta_desc = soup.find('meta', attrs={'name': 'description'})
+                        if not meta_desc:
+                            meta_desc = soup.find('meta', attrs={'property': 'og:description'})
+                        description = meta_desc.get('content', '').strip() if meta_desc else "No description available"
+                        
+                        results.append({
+                            "title": title,
+                            "href": url,
+                            "body": description
+                        })
+                    except Exception as page_error:
+                        # If we can't fetch the page, still include the URL
+                        logger.warning(f"[internet_search] Could not fetch page {url}: {str(page_error)}")
+                        results.append({
+                            "title": url,
+                            "href": url,
+                            "body": "Could not fetch page content"
+                        })
+                
+                if results:
                     all_results.append({
                         "query": query,
-                        "error": f"Search failed: {str(e)}",
+                        "results": results
+                    })
+                    logger.info(f"[internet_search] Found {len(results)} results for: {query}")
+                else:
+                    logger.warning(f"[internet_search] No results found for: {query}")
+                    all_results.append({
+                        "query": query,
                         "results": []
                     })
+                    
+            except Exception as e:
+                logger.error(f"[internet_search] Error searching for '{query}': {str(e)}")
+                all_results.append({
+                    "query": query,
+                    "error": f"Search failed: {str(e)}",
+                    "results": []
+                })
     
+    except ImportError as e:
+        logger.error(f"[internet_search] Missing required library: {str(e)}")
+        error_msg = f"Internet Search Service: MISSING DEPENDENCIES\n\nRequired libraries not installed. Please install with: pip install googlesearch-python requests beautifulsoup4"
+        context.add_user_message(f"Search: {', '.join(search_queries)}")
+        context.add_assistant_message(error_msg)
+        return ComponentOutput(
+            cid=component_input.cid,
+            task=component_input.task,
+            input=component_input.input,
+            output=ComponentOutputData(
+                immediate_response=error_msg,
+                notebook="no update"
+            ),
+            component="internet_search"
+        )
     except Exception as e:
         logger.error(f"[internet_search] Critical error during search: {str(e)}")
         error_response = f"""Internet Search Service: ERROR

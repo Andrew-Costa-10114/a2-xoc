@@ -20,7 +20,7 @@ SUPPORTED COMPONENTS:
 2. refine: Improve outputs based on previous component results
 3. feedback: Analyze outputs and provide structured feedback
 4. human_feedback: Acknowledge and store user feedback in conversation history
-5. internet_search: Search internet using DuckDuckGo (free, no API key required)
+5. internet_search: Search internet using Google search (free, no API key required)
 6. summary: Use LLM to summarize previous outputs
 7. aggregate: Majority voting on multiple outputs
 
@@ -295,7 +295,7 @@ async def root():
             "refine": "/refine - Refine outputs based on previous results",
             "feedback": "/feedback - Analyze outputs and provide feedback",
             "human_feedback": "/human_feedback - Acknowledge user feedback",
-            "internet_search": "/internet_search - Search internet using DuckDuckGo",
+            "internet_search": "/internet_search - Search internet using Google search",
             "summary": "/summary - Summarize previous outputs",
             "aggregate": "/aggregate - Majority voting on outputs"
         },
@@ -502,9 +502,9 @@ async def human_feedback_component(request: Request, component_input: ComponentI
 @limiter.limit("10/minute")
 async def internet_search_component(request: Request, component_input: ComponentInput):
     """
-    Search the internet for information using DuckDuckGo.
+    Search the internet for information using Google search.
     
-    This endpoint performs real internet searches using the DuckDuckGo search API
+    This endpoint performs real internet searches using Google search
     (free, no API key required). It returns up to 10 results per query with titles,
     URLs, and descriptions formatted as structured text.
     
