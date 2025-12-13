@@ -21,7 +21,17 @@ import logging
 import os
 import sys
 
-import bittensor as bt
+try:
+    import bittensor as bt
+    # Try importing Wallet directly
+    try:
+        from bittensor.wallet import Wallet
+    except ImportError:
+        # Fallback: try to use bt.Wallet
+        Wallet = bt.Wallet
+except ImportError as e:
+    logging.error(f"Failed to import bittensor: {e}")
+    sys.exit(1)
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -36,8 +46,18 @@ def generate(name: str, api_url: str, token: str, wallet_password: str) -> str:
     """
     message = api_url + "<seperate>" + token
 
-    # initialize wallet (Bittensor v10 uses Wallet with capital W)
-    wallet = bt.Wallet(name=name)
+    # Try different ways to initialize wallet for Bittensor v10 compatibility
+    try:
+        # Method 1: Try Wallet class directly
+        wallet = Wallet(name=name)
+    except (AttributeError, TypeError) as e:
+        logger.error(f"Failed to create wallet with Wallet(name=...): {e}")
+        # Method 2: Try with path parameter
+        try:
+            wallet = Wallet(name=name, path=os.path.expanduser("~/.bittensor/wallets/"))
+        except Exception as e2:
+            logger.error(f"Failed to create wallet with path: {e2}")
+            raise
 
     # store password and unlock
     wallet.coldkey_file.save_password_to_env(wallet_password)
