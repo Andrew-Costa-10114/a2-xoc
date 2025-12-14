@@ -75,11 +75,14 @@ def generate(name: str, api_url: str, token: str, wallet_password: str) -> str:
     # sign data (use raw bytes of the message)
     signature = keypair.sign(data=message)
 
+    # Format: exactly 3 lines as expected by registration portal
+    # Line 1: message
+    # Line 2: Signed by: (with tab prefix)
+    # Line 3: Signature: (with tab prefix)
     file_contents = (
         f"{message}\n"
         f"\tSigned by: {keypair.ss58_address}\n"
         f"\tSignature: {signature.hex()}\n"
-        f"\tTimestamp: {timestamp.isoformat()} ({timezone})\n"
     )
     return file_contents
 
