@@ -325,7 +325,7 @@ class HealthResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "status": "healthy",
-                "miner_name": "sample-miner-gpt4o",
+                "miner_name": "miner-andrew-gpt4o",
                 "model": "gpt-4o",
                 "openai_status": "connected"
             }
@@ -345,7 +345,7 @@ class CapabilitiesResponse(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "miner_name": "sample-miner-gpt4o",
+                "miner_name": "miner-andrew-gpt4o",
                 "model": "gpt-4o",
                 "supported_functions": ["complete", "feedback", "refine", "human_feedback"],
                 "conversation_aware": True,

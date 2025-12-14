@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     min_evaluation_samples: int = 5  # Minimum evaluation samples before enforcing (prevents false positives)
     
     # Miner Configuration
-    miner_name: str = "sample-miner"
+    miner_name: str = "miner-andrew"
     
     # API Settings
     debug: bool = False
